@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------
+#  MLOps Module 4 — .gitignore
+# ---------------------------------------------------------------
+
+# ----- Instructor-only material -----
+# .docx manuals + private build logs that should not be in the public student repo
+.not_for_distribution/
+
+# ----- Temporary build contexts -----
+# 'build/' holds an ad-hoc copy of M3 Lab E files used during one local build.
+# Students should regenerate this themselves following M4_Docker_End_to_End_Student_Guide.md.
+build/
+
+# ----- Office lock files -----
+~$*
+*.tmp
+
+# ----- Python -----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+*.egg-info/
+
+# ----- Streamlit / Docker local state -----
+.streamlit/secrets.toml
+*.log
+
+# ----- OS / IDE junk -----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+.OneDrive*
+
+# ----- Secrets -----
+*.pem
+*.ppk
+*.p12
+*.key
+.env

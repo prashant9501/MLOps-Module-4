@@ -1,0 +1,49 @@
+# FreshBasket Delay Predictor -- Module 4 Lab 4 (Docker Compose)
+#
+# Single-service stack for the simpler app.py that loads pre-trained .pkl
+# artifacts from disk. No DB, no MLflow -- this app is intentionally self-
+# contained.
+#
+# Quick start:
+#   docker compose up -d --build
+#   open http://localhost:8501
+#   docker compose down
+#
+# Why use Compose at all for one service?
+#   Lab 4 is the right place to LEARN Compose syntax (services / build /
+#   ports / volumes / restart policies / env vars / healthchecks) without
+#   the additional complexity of inter-service networking. Once you can
+#   read this 25-line file, the multi-service stretch goal below makes
+#   sense as a natural extension.
+
+services:
+  dashboard:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: freshbasket-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      # The simple app reads no env vars; this block is illustrative only --
+      # showing where you'd inject AWS creds / API keys for a richer version.
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+# ----------------------------------------------------------------------
+# STRETCH GOAL -- multi-service version
+# ----------------------------------------------------------------------
+# The original Lab 4 used a 3-service stack (Streamlit + Postgres + MLflow)
+# to demonstrate inter-container networking. With the simpler app loading
+# .pkl files from disk, those services aren't actually called by the app.
+#
+# To experiment with multi-service Compose, see M4_KT_Docker_Compose_with_AI.md
+# Section 6 ("Stretch: ask the AI for a multi-service variant"). That walkthrough
+# shows you how to prompt an AI model to add a Postgres + MLflow alongside the
+# dashboard so you can practice docker compose up/down on a richer stack.

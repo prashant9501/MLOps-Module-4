@@ -1,0 +1,412 @@
+# M4 Lab 2: Build, Run, and Test Your Container
+
+**Module 4 -- Containerization with Docker | Spine Project: Truck Delay Classification**
+
+> **Just want to ship it end-to-end?** See [M4_Docker_End_to_End_Student_Guide.md](M4_Docker_End_to_End_Student_Guide.md) — single doc covering install → build → push → sanity check across Windows / macOS / Linux. This lab is the deep dive on the `docker build` + `docker run` mechanics.
+
+| Detail | Value |
+|---|---|
+| Duration | 45 minutes |
+| Difficulty | Beginner |
+| Tools | Docker Desktop (Windows/Mac) or Docker Engine (Linux), VS Code, browser |
+| Prerequisite | Lab 1 complete (Dockerfile and .dockerignore written) |
+| Builds Toward | Lab 3 (push to ECR), Module 5 (deploy to ECS) |
+
+---
+
+## Learning Objectives
+
+By the end of this lab you will be able to:
+
+1. Build a Docker image from a Dockerfile using `docker build`.
+2. Run a container with port mapping and environment variables.
+3. Inspect a running container using `docker logs`, `docker exec`, and `docker history`.
+4. Manage the container lifecycle (start, stop, remove).
+5. Appreciate the deployment speed advantage of containers over manual setup.
+
+---
+
+## Business Context
+
+In Module 3 Lab A, Arjun from the FreshBasket team spent over 20 minutes setting up the Real Estate API on a fresh EC2 instance -- installing Python, transferring files, pip-installing dependencies, and fixing version conflicts. Every new server required the same tedious process. In Lab 1, you wrote a Dockerfile that captures the entire setup as a repeatable recipe. Now you will execute that recipe: build an image once, then start the Streamlit dashboard with a single command in under 5 seconds.
+
+---
+
+## Step 1: Build the Docker Image
+
+Open a terminal, navigate to your `truck-delay-docker/` directory (the one containing the Dockerfile from Lab 1), and run:
+
+> **🪟 Windows (PowerShell or Command Prompt):**
+> ```
+> cd C:\path\to\truck-delay-docker
+> docker build -t truck-delay-app:v1 .
+> ```
+>
+> **🍎 macOS / 🐧 Linux:**
+> ```bash
+> cd ~/path/to/truck-delay-docker
+> docker build -t truck-delay-app:v1 .
+> ```
+
+**What the flags mean:**
+
+| Flag | Purpose |
+|---|---|
+| `-t truck-delay-app:v1` | Tags the image with a name (`truck-delay-app`) and version (`v1`). Without a tag, Docker assigns a random ID that is impossible to remember. |
+| `.` (the dot at the end) | Tells Docker where to find the Dockerfile and the build context (the set of files Docker can access during the build). The dot means "the current directory". |
+
+### Expected Output
+
+Docker processes each instruction in the Dockerfile as a numbered step. You will see output similar to:
+
+```
+[+] Building 87.3s (12/12) FINISHED
+ => [1/6] FROM python:3.12-slim@sha256:...                          12.4s
+ => [2/6] WORKDIR /app                                               0.1s
+ => [3/6] COPY requirements.txt .                                    0.0s
+ => [4/6] RUN pip install --no-cache-dir -r requirements.txt        62.8s
+ => [5/6] RUN apt-get update && apt-get install -y ...               8.2s
+ => [6/6] COPY app.py config.py utils.py ./                          0.0s
+ => exporting to image                                                3.7s
+```
+
+The first build takes 1-3 minutes, depending on your internet speed and machine. The `pip install` step is the slowest because it downloads and installs all ML dependencies. Subsequent builds (after source-code-only changes) will be much faster thanks to layer caching, as you learned in Lab 1.
+
+`[SCREENSHOT: Terminal showing complete docker build output with all steps succeeded]`
+
+> **Build failed?** Check these common issues:
+> - "no such file or directory" for `requirements.txt` -- make sure you are running the command from the directory that contains the Dockerfile.
+> - "Cannot connect to the Docker daemon" -- Docker Desktop is not running. Start it and try again.
+> - Pip install errors for specific packages -- your `requirements.txt` may reference a version not available for the container's Python. Double-check that `requirements.txt` matches the one from Module 3 Lab E.
+
+---
+
+## Step 2: Check Image Size
+
+List your Docker images to see the newly built one:
+
+```bash
+docker images truck-delay-app
+```
+
+Expected output:
+
+```
+REPOSITORY        TAG    IMAGE ID       CREATED          SIZE
+truck-delay-app   v1     a3b7c9d2e4f6   30 seconds ago   1.08 GB
+```
+
+**Is 1 GB normal?** Yes, for an ML application. The bulk of the size comes from the Python packages: scikit-learn, xgboost, pandas, numpy, and their compiled C libraries. A simple Flask "Hello World" app would be under 200 MB. There are techniques to reduce this (multi-stage builds, smaller dependency sets), but 1 GB is typical and acceptable for ML containers. Cloud registries like ECR compress images during push/pull, so the actual transfer size is smaller.
+
+---
+
+## Step 3: Inspect Image Layers
+
+Every instruction in the Dockerfile created a layer. You can see them with:
+
+```bash
+docker history truck-delay-app:v1
+```
+
+Expected output (simplified):
+
+```
+IMAGE          CREATED         CREATED BY                                      SIZE
+a3b7c9d2e4f6   1 minute ago   CMD ["streamlit" "run" "app.py" ...]            0B
+<missing>      1 minute ago   HEALTHCHECK ...                                 0B
+<missing>      1 minute ago   EXPOSE 8501                                     0B
+<missing>      1 minute ago   COPY app.py config.py utils.py ./               18.4kB
+<missing>      1 minute ago   RUN apt-get update && apt-get install ...        12.3MB
+<missing>      2 minutes ago  RUN pip install --no-cache-dir -r ...            824MB
+<missing>      2 minutes ago  COPY requirements.txt .                          312B
+<missing>      2 minutes ago  WORKDIR /app                                     0B
+...            (base image layers below)
+```
+
+Notice how the `pip install` layer is by far the largest (~824 MB). This is the layer you want to keep cached as long as possible -- which is exactly what the two-step COPY pattern from Lab 1 achieves.
+
+`[SCREENSHOT: Terminal showing docker history output with layer sizes]`
+
+---
+
+## Step 4: Run the Container
+
+Now start a container from your image:
+
+```bash
+docker run -d -p 8501:8501 --name truck-app truck-delay-app:v1
+```
+
+**What the flags mean:**
+
+| Flag | Purpose |
+|---|---|
+| `-d` | **Detached mode** -- runs the container in the background so you get your terminal back. Without this, Streamlit's log output would take over your terminal. |
+| `-p 8501:8501` | **Port mapping** -- maps port 8501 on your host machine (left side) to port 8501 inside the container (right side). This is how traffic from your browser reaches the Streamlit app. |
+| `--name truck-app` | Assigns a human-readable name to the container. Without this, Docker assigns a random name like `quirky_ptolemy`. |
+| `truck-delay-app:v1` | The image to run (name:tag from the build step). |
+
+Verify the container is running:
+
+```bash
+docker ps
+```
+
+Expected output:
+
+```
+CONTAINER ID   IMAGE                 COMMAND                  STATUS          PORTS                    NAMES
+f7a8b2c3d4e5   truck-delay-app:v1   "streamlit run app.py"   Up 5 seconds    0.0.0.0:8501->8501/tcp   truck-app
+```
+
+The `STATUS` column should show "Up X seconds" (not "Exited"). The `PORTS` column confirms the port mapping is active.
+
+`[SCREENSHOT: Terminal showing docker ps output with truck-app container running]`
+
+---
+
+## Step 5: Test in Your Browser
+
+Open your browser and navigate to:
+
+```
+http://localhost:8501
+```
+
+The FreshBasket Truck Delay Prediction Dashboard should load. Since you are running locally without AWS credentials, the app will automatically switch to **demo mode** -- it generates synthetic truck data and displays predictions based on a heuristic model. You will see the full dashboard with charts, filters, and prediction results, all powered by the demo data generator in `utils.py`.
+
+`[SCREENSHOT: Streamlit Truck Delay Dashboard running in the browser from the Docker container, showing the demo mode banner and prediction charts]`
+
+> **Page not loading?** Give the container 5-10 seconds to start up. Streamlit needs a moment to initialise. If it still does not load after 15 seconds, check the container logs (Step 6).
+
+---
+
+## Step 6: View Container Logs
+
+See what Streamlit is printing inside the container:
+
+```bash
+docker logs truck-app
+```
+
+You will see Streamlit's startup messages:
+
+```
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:8501
+
+  [INFO] Demo mode active — using synthetic data
+```
+
+To watch logs in real-time (useful for debugging):
+
+```bash
+docker logs -f truck-app
+```
+
+Press `Ctrl+C` to stop following the logs (this does NOT stop the container -- it only detaches your terminal from the log stream).
+
+---
+
+## Step 7: Execute Commands Inside the Container
+
+You can open a shell session inside the running container to inspect its environment. This is invaluable for debugging:
+
+```bash
+docker exec -it truck-app bash
+```
+
+**What the flags mean:**
+
+| Flag | Purpose |
+|---|---|
+| `-i` | Interactive -- keeps STDIN open so you can type commands |
+| `-t` | Allocates a pseudo-TTY so the terminal behaves normally |
+
+You are now inside the container. The prompt changes to something like `root@f7a8b2c3d4e5:/app#`. Try these commands:
+
+```bash
+# Check the working directory
+pwd
+# Expected: /app
+
+# List the application files
+ls -la
+# Expected: app.py  config.py  requirements.txt  utils.py
+
+# Verify the Python version
+python --version
+# Expected: Python 3.12.10
+
+# List installed packages (first 20)
+pip list | head -20
+# Expected: streamlit, pandas, scikit-learn, xgboost, etc.
+
+# Check that batch_score.py is NOT here (excluded by design)
+ls batch_score.py 2>/dev/null || echo "Not found (correct!)"
+
+# Exit the container shell
+exit
+```
+
+`[SCREENSHOT: Terminal inside the container showing pwd, ls, and python --version output]`
+
+> **Important:** When you type `exit`, you leave the container's shell and return to your host machine's terminal. The container itself continues running.
+
+---
+
+## Step 8: Pass Environment Variables
+
+The `config.py` file reads configuration from environment variables (DB_HOST, DB_PORT, DEMO_MODE, etc.). In a real deployment, you would pass your actual AWS credentials and RDS endpoints to the container. Here is how:
+
+First, stop and remove the existing container:
+
+```bash
+docker stop truck-app && docker rm truck-app
+```
+
+Then start a new container with environment variables:
+
+```bash
+docker run -d -p 8501:8501 --name truck-app \
+  -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com \
+  -e DB_PORT=5432 \
+  -e DB_NAME=truck_delay_db \
+  -e DB_USER=mlops_admin \
+  -e DB_PASSWORD=your_password_here \
+  -e S3_BUCKET=mlops-truck-delay-demo-2026 \
+  -e DEMO_MODE=true \
+  truck-delay-app:v1
+```
+
+> **🪟 Windows Command Prompt:** Replace the `\` line continuations with `^`:
+> ```
+> docker run -d -p 8501:8501 --name truck-app ^
+>   -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com ^
+>   -e DB_PORT=5432 ^
+>   -e DEMO_MODE=true ^
+>   truck-delay-app:v1
+> ```
+>
+> **🪟 Windows PowerShell:** Use backtick `` ` `` for line continuation:
+> ```powershell
+> docker run -d -p 8501:8501 --name truck-app `
+>   -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com `
+>   -e DB_PORT=5432 `
+>   -e DEMO_MODE=true `
+>   truck-delay-app:v1
+> ```
+
+Each `-e KEY=VALUE` flag sets an environment variable inside the container. The app's `config.py` picks these up via `os.getenv()`. For now, keep `DEMO_MODE=true` so the app works without live AWS resources.
+
+You can verify the environment variables are set correctly:
+
+```bash
+docker exec truck-app env | grep -E "DB_HOST|DEMO_MODE"
+```
+
+---
+
+## Step 9: Container Lifecycle Management
+
+Containers have a simple lifecycle. Practice these commands:
+
+### Stop a running container
+
+```bash
+docker stop truck-app
+```
+
+This sends a graceful shutdown signal (SIGTERM). Streamlit has a few seconds to clean up before Docker forcefully terminates it.
+
+### Start a stopped container
+
+```bash
+docker start truck-app
+```
+
+This restarts the same container with its original configuration (port mapping, environment variables, name). It does not create a new container.
+
+### Remove a stopped container
+
+```bash
+docker stop truck-app
+docker rm truck-app
+```
+
+You must stop a container before removing it. Removing a container deletes it permanently -- its logs and filesystem changes are gone.
+
+### Force-remove a running container (shortcut)
+
+```bash
+docker rm -f truck-app
+```
+
+This stops and removes in one command. Useful during development but not recommended in production (no graceful shutdown).
+
+### List all containers (including stopped)
+
+```bash
+docker ps -a
+```
+
+The `-a` flag shows containers in any state. Without it, `docker ps` only shows running containers.
+
+---
+
+## Key Moment: The Speed Comparison
+
+Think back to Module 3 Lab A. Setting up the Real Estate API on a fresh EC2 instance required:
+
+1. SSH into the instance
+2. Install Python 3.12 (apt-get update, add repository, install)
+3. Create a virtual environment
+4. Transfer project files via SCP
+5. pip install requirements (and debug any failures)
+6. Set environment variables
+7. Start the application
+
+**Total time: 20-30 minutes of manual work. Every single time.**
+
+With Docker, on any machine that has Docker installed:
+
+```bash
+docker run -d -p 8501:8501 truck-delay-app:v1
+```
+
+**Total time: 2 seconds** (after the image is pulled). The entire environment -- OS, Python, libraries, source code, configuration -- is baked into the image. No manual steps. No version mismatches. No "works on my machine" surprises.
+
+This is the core value proposition of containers: **build once, run anywhere, identically**.
+
+---
+
+## Checkpoint
+
+Before moving to Lab 3, verify:
+
+- [ ] `docker images truck-delay-app` shows your `v1` image.
+- [ ] `docker run -d -p 8501:8501 --name truck-app truck-delay-app:v1` starts the container.
+- [ ] `http://localhost:8501` shows the FreshBasket Truck Delay Dashboard in your browser.
+- [ ] `docker exec -it truck-app bash` lets you inspect the container's filesystem.
+- [ ] You can stop, start, and remove the container using the commands from Step 9.
+
+---
+
+## Clean Up
+
+For Lab 3 you will need the `truck-delay-app:v1` image, so do NOT delete it. But remove any stopped containers to keep things tidy:
+
+```bash
+docker rm -f truck-app 2>/dev/null
+```
+
+---
+
+## What Comes Next
+
+In **Lab 3** you will push your Docker image to Amazon Elastic Container Registry (ECR) -- AWS's private image repository. Once the image is in ECR, any EC2 instance (or ECS cluster in Module 5) can pull and run it without needing your source code or Dockerfile.
+
+---
+
+*FreshBasket Logistics -- Pune | Module 4, Lab 2 of 3*

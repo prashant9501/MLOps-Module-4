@@ -1,0 +1,21 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Version control
+.git/
+.gitignore
+
+# Data and model artifacts (not needed in the image)
+*.csv
+*.pkl
+*.sav
+data/
+models/
+
+# Secrets
+.env
+
+# Documentation
+*.md

@@ -1,0 +1,15 @@
+{
+  "winner_model": "Top-1 untuned (RandomForestClassifier)",
+  "test_f1": 0.6834532374100719,
+  "test_accuracy": 0.8094206821873308,
+  "test_precision": 0.811965811965812,
+  "test_recall": 0.5900621118012422,
+  "test_roc_auc": 0.41736368189257705,
+  "baseline_f1": 0.679,
+  "delta_vs_baseline": 0.004453237410071864,
+  "n_train_pool": 10461,
+  "n_test": 1847,
+  "n_deploy_refit": 12308,
+  "mlflow_experiment": "truck-delay-hp-tuning",
+  "registered_model": "truck-delay-classifier"
+}

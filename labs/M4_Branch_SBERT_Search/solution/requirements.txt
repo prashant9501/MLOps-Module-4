@@ -1,0 +1,26 @@
+# SBERT News Search -- Python Dependencies
+# Tested with Python 3.12.10
+#
+# Core web framework
+flask==3.0.2
+
+# Sentence-BERT for generating 384-dim text embeddings
+# Note: This pulls in PyTorch (~800 MB) as a dependency
+sentence-transformers==3.0.1
+
+# Approximate Nearest Neighbors index for fast similarity search
+annoy==1.17.3
+
+# NLP preprocessing (tokenization, lemmatization)
+spacy==3.7.4
+
+# Stopword lists (combined with spaCy stopwords)
+nltk==3.8.1
+
+# Numerical and data handling
+numpy==1.26.4
+pandas==2.2.0
+
+# spaCy English model (small, ~12 MB)
+# This installs the model directly from the GitHub release
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl

@@ -1,0 +1,28 @@
+# ============================================================
+# SBERT News Search -- Docker Compose (Complete Solution)
+# Module 4 Branch Project
+#
+# Usage:
+#   docker compose up --build       (build and start)
+#   docker compose down             (stop and remove)
+#   docker compose logs -f          (stream logs)
+# ============================================================
+
+services:
+  search-api:
+    build:
+      dockerfile: ./Dockerfile
+      context: ./
+    container_name: sbert-search-api
+
+    # Map host port 5001 to container port 5001
+    ports:
+      - "5001:5001"
+
+    # Mount current directory into container for development
+    # Changes to local files are immediately reflected inside the container
+    volumes:
+      - ".:/app"
+
+    # Start the Flask server
+    command: ["python", "server.py"]
