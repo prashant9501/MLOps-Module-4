@@ -35,7 +35,7 @@ This KT teaches you **how to prompt well** so the output is correct on the first
 6. Build + run →  docker compose up -d --build; visit the URL
 ```
 
-We'll work the M4 Lab 4 self-contained Streamlit predictor as the example. The same flow works for Flask APIs, FastAPI services, batch scripts, Jupyter notebooks served via voila, etc.
+We'll work the M4 Lab 3 self-contained Streamlit predictor as the example. The same flow works for Flask APIs, FastAPI services, batch scripts, Jupyter notebooks served via voila, etc.
 
 ---
 
@@ -142,7 +142,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD pytho
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
 ```
 
-Save this to your project folder as `Dockerfile` (no extension). Compare against the one already in `labs/M4_Lab4_Docker_Compose/app/Dockerfile` — should be close to identical.
+Save this to your project folder as `Dockerfile` (no extension). Compare against the one already in `labs/M4_Lab3_Docker_Compose/app/Dockerfile` — should be close to identical.
 
 ---
 

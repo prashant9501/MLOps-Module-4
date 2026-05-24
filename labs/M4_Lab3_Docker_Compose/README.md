@@ -1,4 +1,4 @@
-# M4 Lab 4: Docker Compose
+# M4 Lab 3: Docker Compose
 
 **Module 4 -- Containerisation & Docker | AWS MLOps Master Course**
 
@@ -42,7 +42,7 @@ There is **no database, no S3, no MLflow** behind this app. That's deliberate �
 ## Folder layout
 
 ```
-M4_Lab4_Docker_Compose/
+M4_Lab3_Docker_Compose/
 ├── README.md                  ← you're here
 ├── docker-compose.yml         ← the single-service Compose file
 └── app/
@@ -69,7 +69,9 @@ docker compose ps                  # Confirm 'freshbasket-dashboard' is running 
 open http://localhost:8501         # macOS; on Windows just visit the URL in a browser
 ```
 
-Wait ~20 s for Streamlit to cold-start (the healthcheck flips from `starting` to `healthy`). Fill in the form, click **Predict Delay Risk**, see the result.
+Wait ~15-20 s for Streamlit to cold-start. `docker compose ps` should then show `Up 21 seconds (healthy)`. Fill in the form, click **Predict Delay Risk**, see the result.
+
+> **Note on image naming:** Compose auto-names the image it builds as `<project>-<service>:latest` (typically `m4_lab3_docker_compose-dashboard:latest`). That's different from the `truck-delay-app:v1` you produced in Lab 2 by hand. Both work; they're independent. To use the **same** image tag as Lab 2, replace the `build:` block in `docker-compose.yml` with `image: truck-delay-app:v1` — Compose will then skip the build step and use whatever's already in your local Docker.
 
 Stop + clean up:
 
@@ -122,7 +124,7 @@ The previous version of this lab had a hand-written 3-service Compose. It's deli
 
 | Symptom | Fix |
 |---|---|
-| `docker compose up` says "no such file or directory: Dockerfile" | You're not in the `M4_Lab4_Docker_Compose/` folder. `cd` to it first. |
+| `docker compose up` says "no such file or directory: Dockerfile" | You're not in the `M4_Lab3_Docker_Compose/` folder. `cd` to it first. |
 | Container starts then immediately exits | `docker compose logs dashboard` — usually a Python traceback. Common cause: `artifacts/` not copied into the image (check the Dockerfile `COPY artifacts/ ./artifacts/` line). |
 | Browser at `http://localhost:8501` shows `ERR_CONNECTION_REFUSED` | Cold start not done yet. Wait 20 s; check `docker compose ps` — once status is `(healthy)`, Streamlit is ready. |
 | `docker compose ps` shows status `(unhealthy)` | Healthcheck failing. `docker compose logs dashboard` for clues. Most common: app crashed at startup. |

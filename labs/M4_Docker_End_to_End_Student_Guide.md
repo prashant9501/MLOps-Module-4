@@ -2,7 +2,7 @@
 
 **Containerise the Module 3 Truck Delay dashboard, push it to ECR, and prove the image runs anywhere.**
 
-> Goal of this doc: a single walkthrough you can follow on your own machine — from installing Docker to having your image in AWS ECR + verified portable. The individual M4 labs ([Lab A](M4_Lab_A_AWS_Provisioning_from_Console.md), [Lab 1](M4_Lab1_Write_Dockerfile.md), [Lab 2](M4_Lab2_Build_Run_Test.md), [Lab 3](M4_Lab3_Push_to_ECR.md)) go deeper on each step; this doc is the "happy-path" tie-everything-together version.
+> Goal of this doc: a single walkthrough you can follow on your own machine — from installing Docker to having your image in AWS ECR + verified portable. The individual M4 labs ([Lab A](M4_Lab_A_AWS_Provisioning_from_Console.md), [Lab 1](M4_Lab1_Write_Dockerfile.md), [Lab 2](M4_Lab2_Build_Run_Test.md), [Lab 3](M4_Lab4_Push_to_ECR.md)) go deeper on each step; this doc is the "happy-path" tie-everything-together version.
 
 > Format: every OS-specific step is marked **🪟 Windows / 🍎 macOS / 🐧 Linux**. Run the variant that matches your machine and skip the others.
 
@@ -42,7 +42,7 @@ This is the **artifact M5 deploys to ECS Fargate.** Everything else in M5 (ALB, 
 ```
 Your laptop                                         AWS account
 ─────────────                                       ─────────────
-  labs/M4_Lab4_Docker_Compose/app/                  ┌──────────────────┐
+  labs/M4_Lab3_Docker_Compose/app/                  ┌──────────────────┐
     ├── app.py                                      │  ECR repo         │
     ├── artifacts/  (4 pre-trained .pkl + JSON)     │  truck-delay-app  │
     ├── requirements.txt                            │   :v1             │ ── M5 pulls
@@ -60,7 +60,7 @@ Your laptop                                         AWS account
 
 | What | Why | Verify |
 |---|---|---|
-| This repo cloned | The app + its artifacts + the Dockerfile all live in `labs/M4_Lab4_Docker_Compose/app/` | `ls labs/M4_Lab4_Docker_Compose/app/` shows app.py + Dockerfile + requirements.txt + artifacts/ |
+| This repo cloned | The app + its artifacts + the Dockerfile all live in `labs/M4_Lab3_Docker_Compose/app/` | `ls labs/M4_Lab3_Docker_Compose/app/` shows app.py + Dockerfile + requirements.txt + artifacts/ |
 | An AWS account with admin or ECR full-access permissions | Section 9 creates an ECR repo; Section 10 pushes the image | `aws sts get-caller-identity` (after AWS CLI is installed) |
 | AWS CLI v2 installed and configured | Sections 9-11 use it | `aws --version` returns 2.x |
 | ~10 GB free disk space | Docker images + cache + WSL2 distro can eat space | Self-check |
@@ -214,13 +214,13 @@ If that works, Docker is ready. Move on.
 The **build context** is the folder Docker uses as input — every file in it is sent to the Docker daemon when you run `docker build`. For this module, **the build context is already prepared** at:
 
 ```
-labs/M4_Lab4_Docker_Compose/app/
+labs/M4_Lab3_Docker_Compose/app/
 ```
 
 Contents (you'll see this after cloning the repo):
 
 ```
-labs/M4_Lab4_Docker_Compose/app/
+labs/M4_Lab3_Docker_Compose/app/
 ├── app.py              ← FreshBasket Streamlit Delay Predictor (~200 lines)
 ├── requirements.txt    ← Pinned Python deps (streamlit, pandas, xgboost, ...)
 ├── Dockerfile          ← (Section 6 walks through what it does)
@@ -238,14 +238,14 @@ Move into the build context for the rest of the walkthrough:
 ### 🪟 Windows (PowerShell from the repo root)
 
 ```powershell
-cd "labs\M4_Lab4_Docker_Compose\app"
+cd "labs\M4_Lab3_Docker_Compose\app"
 Get-ChildItem
 ```
 
 ### 🍎 macOS / 🐧 Linux (bash from the repo root)
 
 ```bash
-cd labs/M4_Lab4_Docker_Compose/app
+cd labs/M4_Lab3_Docker_Compose/app
 ls -la
 ```
 
@@ -744,7 +744,7 @@ For when you've done this before and just want the muscle memory:
 
 ```bash
 # The build context is already in this repo
-cd labs/M4_Lab4_Docker_Compose/app
+cd labs/M4_Lab3_Docker_Compose/app
 
 # Build + smoke test
 docker build -t truck-delay-app:v1 .
@@ -777,7 +777,7 @@ sleep 15 && curl -sI http://localhost:8501/_stcore/health
 You now have the M4 ECR image in your account. Three paths forward:
 
 - **Stop here** — you've completed M4. Run the teardown in Section 12 to clean up Docker artifacts locally (keep the ECR repo for M5).
-- **Try M4 Lab 4 (Docker Compose)** — see [M4_Lab4_Docker_Compose/README.md](M4_Lab4_Docker_Compose/README.md) for the multi-container local stack (Streamlit + Postgres + MLflow all locally via `docker compose up`).
+- **Try M4 Lab 3 (Docker Compose)** — see [M4_Lab3_Docker_Compose/README.md](M4_Lab3_Docker_Compose/README.md) for the multi-container local stack (Streamlit + Postgres + MLflow all locally via `docker compose up`).
 - **Continue to M5** — [Module 5](../../Module%205/README.md) takes this exact ECR image and deploys it to ECS Fargate behind an Application Load Balancer, with GitHub Actions CI/CD.
 
 The Truck Delay container image is now the **single artifact** that flows through M5, M6, M7, and M8 — same image, different operational layers added at each module.

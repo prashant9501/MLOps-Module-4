@@ -9,8 +9,8 @@
 | Duration | 45 minutes |
 | Difficulty | Beginner |
 | Tools | Docker Desktop (Windows/Mac) or Docker Engine (Linux), VS Code |
-| Prerequisite | This repo cloned. The application source already lives at `labs/M4_Lab4_Docker_Compose/app/` — no copying from other repos needed. |
-| Builds Toward | Lab 2 (build and run), Lab 3 (push to ECR) |
+| Prerequisite | This repo cloned. The application source already lives at `labs/M4_Lab3_Docker_Compose/app/` — no copying from other repos needed. |
+| Builds Toward | Lab 2 (build and run), Lab 4 (push to ECR) |
 
 ---
 
@@ -54,10 +54,10 @@ You should see output like `Docker version 27.x.x, build ...`. If you get "comma
 
 ### The Application Files
 
-The build context is **already prepared** in this repo at `labs/M4_Lab4_Docker_Compose/app/`. Open that folder in VS Code:
+The build context is **already prepared** in this repo at `labs/M4_Lab3_Docker_Compose/app/`. Open that folder in VS Code:
 
 ```
-labs/M4_Lab4_Docker_Compose/app/
+labs/M4_Lab3_Docker_Compose/app/
 ├── app.py              Streamlit dashboard entry point (~200 lines)
 ├── requirements.txt    Pinned Python dependencies (streamlit, pandas, xgboost, scikit-learn, ...)
 ├── Dockerfile          The file you'll learn to read + write in this lab
@@ -132,7 +132,7 @@ The slim variant is the sweet spot for ML applications. It is small enough to pu
 From a terminal:
 
 ```bash
-cd labs/M4_Lab4_Docker_Compose/app
+cd labs/M4_Lab3_Docker_Compose/app
 ```
 
 Open the existing `Dockerfile` in VS Code. It looks like this:
@@ -209,7 +209,7 @@ The default command that runs when a container starts. Flags worth knowing:
 
 When you run `docker build`, Docker sends the entire directory (the "build context") to the Docker daemon. If your project contains large unused files like `.venv/`, `.git/`, or local Jupyter notebooks, the build context becomes unnecessarily large and the build slows down.
 
-The repo already includes `.dockerignore` at `labs/M4_Lab4_Docker_Compose/.dockerignore`. A typical content:
+The repo already includes `.dockerignore` at `labs/M4_Lab3_Docker_Compose/.dockerignore`. A typical content:
 
 ```
 # Virtual environments -- never ship these into a container
@@ -245,7 +245,7 @@ For our `app/` folder the difference isn't huge (no `.venv/` here), but the habi
 Before moving to Lab 2 (where you will build the image), confirm your folder looks exactly like this:
 
 ```
-labs/M4_Lab4_Docker_Compose/app/
+labs/M4_Lab3_Docker_Compose/app/
 ├── Dockerfile              The recipe you walked through in Step 3
 ├── app.py                  Streamlit dashboard
 ├── requirements.txt        Python dependencies
@@ -256,7 +256,7 @@ labs/M4_Lab4_Docker_Compose/app/
     └── model_metadata.json
 ```
 
-> **🪟 Windows note:** Windows Explorer hides files that start with a dot by default. To see `.dockerignore` (it's one level above, in `labs/M4_Lab4_Docker_Compose/`), open the folder in VS Code's Explorer panel, or enable "Show hidden files" in Windows Explorer (View > Show > Hidden items).
+> **🪟 Windows note:** Windows Explorer hides files that start with a dot by default. To see `.dockerignore` (it's one level above, in `labs/M4_Lab3_Docker_Compose/`), open the folder in VS Code's Explorer panel, or enable "Show hidden files" in Windows Explorer (View > Show > Hidden items).
 
 `[SCREENSHOT: VS Code Explorer panel showing the app/ folder with all files visible]`
 
@@ -310,7 +310,7 @@ If the Dockerfile used a single `COPY . .` instead of separating `requirements.t
 
 Before moving to Lab 2, verify:
 
-- [ ] You can locate the Dockerfile at `labs/M4_Lab4_Docker_Compose/app/Dockerfile`.
+- [ ] You can locate the Dockerfile at `labs/M4_Lab3_Docker_Compose/app/Dockerfile`.
 - [ ] You can explain why `COPY requirements.txt .` comes **before** `COPY app.py ./`.
 - [ ] You can explain why the Dockerfile uses Python `urllib.request` (not curl) for the healthcheck.
 - [ ] You can explain what `--server.address=0.0.0.0` does and why it matters.
@@ -324,4 +324,4 @@ In **Lab 2** you will build this Dockerfile into an image, run it as a container
 
 ---
 
-*FreshBasket Logistics -- Pune | Module 4, Lab 1 of 3*
+*FreshBasket Logistics -- Pune | Module 4, Lab 1 of 4*

@@ -1,4 +1,4 @@
-# FreshBasket Delay Predictor -- Module 4 Lab 4 (Docker Compose)
+# FreshBasket Delay Predictor -- Module 4 Lab 3 (Docker Compose)
 #
 # Single-service stack for the simpler app.py that loads pre-trained .pkl
 # artifacts from disk. No DB, no MLflow -- this app is intentionally self-

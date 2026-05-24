@@ -10,7 +10,7 @@
 | Difficulty | Beginner |
 | Tools | Docker Desktop (Windows/Mac) or Docker Engine (Linux), VS Code, browser |
 | Prerequisite | Lab 1 complete (Dockerfile and .dockerignore written) |
-| Builds Toward | Lab 3 (push to ECR), Module 5 (deploy to ECS) |
+| Builds Toward | Lab 4 (push to ECR), Module 5 (deploy to ECS) |
 
 ---
 
@@ -38,13 +38,13 @@ Open a terminal, navigate into the build context, and run:
 
 > **🪟 Windows (PowerShell or Command Prompt):**
 > ```
-> cd labs\M4_Lab4_Docker_Compose\app
+> cd labs\M4_Lab3_Docker_Compose\app
 > docker build -t truck-delay-app:v1 .
 > ```
 >
 > **🍎 macOS / 🐧 Linux:**
 > ```bash
-> cd labs/M4_Lab4_Docker_Compose/app
+> cd labs/M4_Lab3_Docker_Compose/app
 > docker build -t truck-delay-app:v1 .
 > ```
 
@@ -75,7 +75,7 @@ The first build takes 1-3 minutes, depending on your internet speed and machine.
 `[SCREENSHOT: Terminal showing complete docker build output with all steps succeeded]`
 
 > **Build failed?** Check these common issues:
-> - "no such file or directory" for `requirements.txt` -- make sure you are running the command from `labs/M4_Lab4_Docker_Compose/app/`.
+> - "no such file or directory" for `requirements.txt` -- make sure you are running the command from `labs/M4_Lab3_Docker_Compose/app/`.
 > - "Cannot connect to the Docker daemon" -- Docker Desktop is not running. Start it and try again.
 > - Pip install errors for specific packages -- check that `requirements.txt` is unchanged (streamlit 1.32, xgboost 2.0.3, numpy<2.0).
 
@@ -89,14 +89,18 @@ List your Docker images to see the newly built one:
 docker images truck-delay-app
 ```
 
-Expected output:
+Expected output (sizes vary slightly by Docker version):
 
 ```
-REPOSITORY        TAG    IMAGE ID       CREATED          SIZE
-truck-delay-app   v1     a3b7c9d2e4f6   30 seconds ago   1.08 GB
+IMAGE                ID             DISK USAGE   CONTENT SIZE
+truck-delay-app:v1   a9ff99743e82       1.79GB          541MB
 ```
 
-**Is 1 GB normal?** Yes, for an ML application. The bulk of the size comes from the Python packages: scikit-learn, xgboost, pandas, numpy, and their compiled C libraries. A simple Flask "Hello World" app would be under 200 MB. There are techniques to reduce this (multi-stage builds, smaller dependency sets), but 1 GB is typical and acceptable for ML containers. Cloud registries like ECR compress images during push/pull, so the actual transfer size is smaller.
+The two numbers measure different things:
+- **DISK USAGE** (~1.8 GB) — what the image occupies on your laptop's Docker disk, including unpacked layers
+- **CONTENT SIZE** (~540 MB) — compressed size, what gets transferred over the network when you `docker push` to ECR
+
+**Is this size normal?** Yes, for an ML application. The bulk comes from the Python packages: scikit-learn, xgboost, pandas, numpy, and their compiled C libraries (the pip-install layer alone is ~1.1 GB). A simple Flask "Hello World" app would be under 200 MB. There are techniques to reduce this further (multi-stage builds, distroless base images, smaller dependency sets), but 500 MB compressed is typical and acceptable for ML containers.
 
 ---
 
@@ -111,19 +115,19 @@ docker history truck-delay-app:v1
 Expected output (simplified):
 
 ```
-IMAGE          CREATED         CREATED BY                                      SIZE
-a3b7c9d2e4f6   1 minute ago   CMD ["streamlit" "run" "app.py" ...]            0B
-<missing>      1 minute ago   HEALTHCHECK ...                                 0B
-<missing>      1 minute ago   EXPOSE 8501                                     0B
-<missing>      1 minute ago   COPY artifacts/ ./artifacts/                    1.1MB
-<missing>      1 minute ago   COPY app.py ./                                  8.0kB
-<missing>      2 minutes ago  RUN pip install --no-cache-dir -r ...            824MB
-<missing>      2 minutes ago  COPY requirements.txt .                          312B
-<missing>      2 minutes ago  WORKDIR /app                                     0B
-...            (base image layers below)
+CREATED BY                                      SIZE
+CMD ["streamlit" "run" "app.py" ...]            0B
+HEALTHCHECK CMD python -c "..."                 0B
+EXPOSE 8501                                     0B
+COPY artifacts/ ./artifacts/                    1.09MB
+COPY app.py ./                                  16.4kB
+RUN pip install --no-cache-dir -r ...           1.12GB    ← biggest layer
+COPY requirements.txt .                         12.3kB
+WORKDIR /app                                    8.19kB
+...                                             (base image layers below)
 ```
 
-Notice how the `pip install` layer is by far the largest (~824 MB). This is the layer you want to keep cached as long as possible -- which is exactly what the two-step COPY pattern from Lab 1 achieves.
+Notice how the `pip install` layer is by far the largest (~1.1 GB). This is the layer you want to keep cached as long as possible -- which is exactly what the two-step COPY pattern from Lab 1 achieves. Edit `app.py` and rebuild → ~5-10 seconds. Edit `requirements.txt` and rebuild → ~60-90 seconds.
 
 `[SCREENSHOT: Terminal showing docker history output with layer sizes]`
 
@@ -152,14 +156,16 @@ Verify the container is running:
 docker ps
 ```
 
-Expected output:
+Expected output (after waiting ~15 seconds for Streamlit + healthcheck):
 
 ```
-CONTAINER ID   IMAGE                 COMMAND                  STATUS          PORTS                    NAMES
-f7a8b2c3d4e5   truck-delay-app:v1   "streamlit run app.py"   Up 5 seconds    0.0.0.0:8501->8501/tcp   truck-app
+NAMES       STATUS                    PORTS
+truck-app   Up 15 seconds (healthy)   0.0.0.0:8501->8501/tcp, [::]:8501->8501/tcp
 ```
 
-The `STATUS` column should show "Up X seconds" (not "Exited"). The `PORTS` column confirms the port mapping is active.
+The `STATUS` column should show "Up X seconds (healthy)" — the `(healthy)` suffix means the HEALTHCHECK from the Dockerfile is passing. If you see just "Up X seconds" without `(healthy)`, the healthcheck hasn't fired yet — that's expected during the 15-second `start_period` of the healthcheck. Wait another 30 seconds and re-run `docker ps`.
+
+The `PORTS` column confirms the port mapping is active in both IPv4 (`0.0.0.0:8501->8501/tcp`) and IPv6 (`[::]:8501->8501/tcp`).
 
 `[SCREENSHOT: Terminal showing docker ps output with truck-app container running]`
 
@@ -239,7 +245,7 @@ ls artifacts/
 
 # Verify the Python version
 python --version
-# Expected: Python 3.12.10
+# Expected: Python 3.12.x  (whatever patch version the python:3.12-slim tag resolves to today)
 
 # List installed packages (first 20)
 pip list | head -20
@@ -398,4 +404,4 @@ In **Lab 3** you will push your Docker image to Amazon Elastic Container Registr
 
 ---
 
-*FreshBasket Logistics -- Pune | Module 4, Lab 2 of 3*
+*FreshBasket Logistics -- Pune | Module 4, Lab 2 of 4*

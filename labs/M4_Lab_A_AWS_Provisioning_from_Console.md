@@ -294,7 +294,7 @@ Nothing. ECR repos don't leave behind any orphan resources. IAM permissions stay
 
 ## What's next
 
-Now run Lab 3 (`M4_Lab3_Push_to_ECR.md`). It assumes:
+Now run Lab 3 (`M4_Lab4_Push_to_ECR.md`). It assumes:
 
 - An ECR repo named `<REPO_NAME>` exists in `<REGION>` ✅ (Step 1)
 - The lifecycle policy is set ✅ (Step 2)

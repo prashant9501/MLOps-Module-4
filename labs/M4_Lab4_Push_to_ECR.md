@@ -1,4 +1,4 @@
-# M4 Lab 3: Push Your Image to Amazon ECR
+# M4 Lab 4: Push Your Image to Amazon ECR
 
 **Module 4 -- Containerization with Docker | Spine Project: Truck Delay Classification**
 
@@ -370,4 +370,4 @@ Before moving to Module 5, verify:
 
 ---
 
-*FreshBasket Logistics -- Pune | Module 4, Lab 3 of 3*
+*FreshBasket Logistics -- Pune | Module 4, Lab 4 of 4*

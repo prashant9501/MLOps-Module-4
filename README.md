@@ -34,9 +34,9 @@ This is **spine phase 2**: the Truck Delay app went from notebook (M3) → **con
     ├── M4_Lab_A_AWS_Provisioning_from_Console.md        Console clicks to create the ECR repository
     ├── M4_Lab1_Write_Dockerfile.md                      Deep dive on the Dockerfile (FROM, COPY, RUN, CMD, layer caching)
     ├── M4_Lab2_Build_Run_Test.md                        Deep dive on docker build / run / logs / exec / lifecycle
-    ├── M4_Lab3_Push_to_ECR.md                           Deep dive on docker login / tag / push to ECR
+    ├── M4_Lab4_Push_to_ECR.md                           Deep dive on docker login / tag / push to ECR
     │
-    └── M4_Lab4_Docker_Compose/                          The Compose lab
+    └── M4_Lab3_Docker_Compose/                          The Compose lab
         ├── README.md                                       Compose lab walkthrough
         ├── docker-compose.yml                              Single-service Compose example
         └── app/                                            The application -- used by ALL labs
@@ -60,13 +60,13 @@ Work through Lab A → Lab 1 → Lab 2 → Lab 3 → Lab 4 in order. ~5 hours. E
 
 ### Path 3 — Just the AI Compose pattern (you know Docker, want the workflow)
 
-Skip straight to **[labs/M4_KT_Docker_Compose_with_AI.md](labs/M4_KT_Docker_Compose_with_AI.md)**. Pair it with the app + Dockerfile in `labs/M4_Lab4_Docker_Compose/app/` to practice the prompt → validate → run loop on a real project.
+Skip straight to **[labs/M4_KT_Docker_Compose_with_AI.md](labs/M4_KT_Docker_Compose_with_AI.md)**. Pair it with the app + Dockerfile in `labs/M4_Lab3_Docker_Compose/app/` to practice the prompt → validate → run loop on a real project.
 
 ---
 
 ## Prerequisites
 
-Everything you need is **already in this repo** under `labs/M4_Lab4_Docker_Compose/app/`:
+Everything you need is **already in this repo** under `labs/M4_Lab3_Docker_Compose/app/`:
 
 - `app.py` — the FreshBasket Delivery Delay Predictor (Streamlit, ~200 lines)
 - `requirements.txt` — pinned Python dependencies
@@ -76,7 +76,7 @@ This app is **self-contained** — it loads everything from local disk, no AWS /
 
 You only need two things from **outside** this repo:
 
-1. **An AWS account** with permissions for ECR + IAM (only needed for Lab 3 push to ECR).
+1. **An AWS account** with permissions for ECR + IAM (only needed for Lab 4 push to ECR).
 2. **A laptop with Docker Desktop or Docker Engine.** Install instructions for all 3 OSes are in §3 of the Student Guide.
 
 > **You don't need to have run M3.** The model artifacts in `app/artifacts/` were exported from M3 once and are version-controlled with the repo — clone and they're yours.
