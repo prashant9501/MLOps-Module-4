@@ -31,7 +31,7 @@
 By the end of this walkthrough, you'll have:
 
 - **Docker Desktop running on your laptop** — `docker info` returns a Server block
-- **A built image** locally: `truck-delay-app:v1` (~600 MB compressed, runs the Streamlit dashboard from M3 Lab E)
+- **A built image** locally: `truck-delay-app:v1` (~600 MB compressed, runs the self-contained FreshBasket Delay Predictor)
 - **The same image in AWS ECR** under a private repository in your account
 - **Proof that the image is portable** — you can delete it locally, pull it back from ECR, and the dashboard still runs
 
@@ -42,13 +42,16 @@ This is the **artifact M5 deploys to ECS Fargate.** Everything else in M5 (ALB, 
 ```
 Your laptop                                         AWS account
 ─────────────                                       ─────────────
-  Source files (M3 Lab E)                           ┌──────────────────┐
-       │                                            │  ECR repo         │
-       ▼                                            │  truck-delay-app  │
-  Dockerfile  →  docker build  →  truck-delay-app:v1│   :v1             │ ── M5 pulls
-                                       │            │   :latest         │
-                                       └─ docker push ▶                 │
-                                                    └──────────────────┘
+  labs/M4_Lab4_Docker_Compose/app/                  ┌──────────────────┐
+    ├── app.py                                      │  ECR repo         │
+    ├── artifacts/  (4 pre-trained .pkl + JSON)     │  truck-delay-app  │
+    ├── requirements.txt                            │   :v1             │ ── M5 pulls
+    └── Dockerfile                                  │   :latest         │
+       │                                            │                  │
+       ▼                                            └──────────────────┘
+  docker build  →  truck-delay-app:v1                      ▲
+                          │                                │
+                          └────────── docker push ─────────┘
 ```
 
 ---
@@ -57,13 +60,13 @@ Your laptop                                         AWS account
 
 | What | Why | Verify |
 |---|---|---|
-| The 4 files from M3 Lab E (`app.py`, `config.py`, `utils.py`, `requirements.txt`) | These are the application source that goes into the container | `ls labs/M3_Lab_E_Streamlit_Deployment/` shows them |
+| This repo cloned | The app + its artifacts + the Dockerfile all live in `labs/M4_Lab4_Docker_Compose/app/` | `ls labs/M4_Lab4_Docker_Compose/app/` shows app.py + Dockerfile + requirements.txt + artifacts/ |
 | An AWS account with admin or ECR full-access permissions | Section 9 creates an ECR repo; Section 10 pushes the image | `aws sts get-caller-identity` (after AWS CLI is installed) |
 | AWS CLI v2 installed and configured | Sections 9-11 use it | `aws --version` returns 2.x |
 | ~10 GB free disk space | Docker images + cache + WSL2 distro can eat space | Self-check |
 | Internet connection | Image pulls + ECR push | Self-check |
 
-> **You do NOT need to have completed M3** to do M4. You only need the four Lab E files. Clone the Module 3 repo (https://github.com/prashant9501/MLOps-Module-3) and copy them — the dashboard runs in `DEMO_MODE=true` with synthetic data, so no AWS resources from M3 are required for this walkthrough.
+> **You do NOT need to have completed M3** to do M4. The pre-trained .pkl files in `app/artifacts/` were exported from M3 once and are version-controlled with this repo. Just clone and you're ready.
 
 ---
 
@@ -206,78 +209,79 @@ If that works, Docker is ready. Move on.
 
 ---
 
-## 5. Stage the build context
+## 5. The build context — already staged in this repo
 
-The **build context** is the folder Docker uses as input — every file in it is sent to the Docker daemon when you run `docker build`.
+The **build context** is the folder Docker uses as input — every file in it is sent to the Docker daemon when you run `docker build`. For this module, **the build context is already prepared** at:
 
-Create a fresh working folder and copy in the M3 Lab E source files:
+```
+labs/M4_Lab4_Docker_Compose/app/
+```
+
+Contents (you'll see this after cloning the repo):
+
+```
+labs/M4_Lab4_Docker_Compose/app/
+├── app.py              ← FreshBasket Streamlit Delay Predictor (~200 lines)
+├── requirements.txt    ← Pinned Python deps (streamlit, pandas, xgboost, ...)
+├── Dockerfile          ← (Section 6 walks through what it does)
+└── artifacts/          ← 4 files (~1 MB total) the app loads at startup
+    ├── xgboost_model.pkl
+    ├── encoder.pkl
+    ├── scaler.pkl
+    └── model_metadata.json
+```
+
+> **Why pre-stage?** Earlier versions of this module had students copy 4 files from a different Module 3 lab. The simpler self-contained app makes M4 standalone — clone this repo, `cd` into `app/`, and you're ready to build.
+
+Move into the build context for the rest of the walkthrough:
 
 ### 🪟 Windows (PowerShell from the repo root)
 
 ```powershell
-$M3 = "Module 3\labs\M3_Lab_E_Streamlit_Deployment"
-$BUILD = "Module 4\build\truck-delay-docker"
-
-New-Item -ItemType Directory -Force -Path $BUILD | Out-Null
-
-Copy-Item "$M3\app.py"           $BUILD\
-Copy-Item "$M3\config.py"        $BUILD\
-Copy-Item "$M3\utils.py"         $BUILD\
-Copy-Item "$M3\requirements.txt" $BUILD\
-
-Get-ChildItem $BUILD
+cd "labs\M4_Lab4_Docker_Compose\app"
+Get-ChildItem
 ```
 
 ### 🍎 macOS / 🐧 Linux (bash from the repo root)
 
 ```bash
-M3="Module 3/labs/M3_Lab_E_Streamlit_Deployment"
-BUILD="Module 4/build/truck-delay-docker"
-
-mkdir -p "$BUILD"
-
-cp "$M3/app.py" "$M3/config.py" "$M3/utils.py" "$M3/requirements.txt" "$BUILD/"
-
-ls -la "$BUILD"
+cd labs/M4_Lab4_Docker_Compose/app
+ls -la
 ```
-
-Either way you should now see (in `Module 4/build/truck-delay-docker/`):
-```
-app.py            (M3 Lab E -- Streamlit dashboard)
-config.py         (M3 Lab E -- env-var-driven config)
-utils.py          (M3 Lab E -- model loader + DB helpers)
-requirements.txt  (M3 Lab E -- pinned Python deps)
-```
-
-`batch_score.py` is intentionally NOT in the build context — it's a separate cron job, not part of the dashboard container.
 
 ---
 
-## 6. Write the Dockerfile + .dockerignore
+## 6. The Dockerfile + .dockerignore
 
-Inside `Module 4/build/truck-delay-docker/`, create two files.
+A `Dockerfile` already lives in `app/`. Here's what it looks like + why each line is the way it is. You don't have to write this from scratch — but you should be able to read it.
 
 ### `Dockerfile`
 
 ```dockerfile
-# Truck Delay Streamlit Dashboard
+# FreshBasket Delay Predictor -- Streamlit Dashboard Image
+# Loads pre-trained .pkl artifacts directly from ./artifacts/. No DB / S3 / MLflow.
+#
 # Build: docker build -t truck-delay-app:v1 .
-# Run:   docker run -d -p 8501:8501 -e DEMO_MODE=true truck-delay-app:v1
+# Run:   docker run -d -p 8501:8501 truck-delay-app:v1
 
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy requirements first so pip-install layer caches across source-only changes
+# Install dependencies first (layer caching: edits to app.py / artifacts don't bust this layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (batch_score.py is excluded via .dockerignore)
-COPY app.py config.py utils.py ./
+# Copy application code AND artifacts/ (the .pkl files the app loads at startup)
+COPY app.py ./
+COPY artifacts/ ./artifacts/
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Health check uses Python stdlib (python:3.12-slim doesn't ship curl)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3).status == 200 else 1)"
+
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
 ```
 
 **Why this Dockerfile is the way it is:**
@@ -285,9 +289,12 @@ CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0
 | Decision | Reason |
 |---|---|
 | `FROM python:3.12-slim` | "slim" variant = ~75 MB base. Has everything Python needs but excludes docs/dev tools. Don't use `alpine` for ML — numpy/scikit-learn wheels rarely work on Alpine and you'll end up compiling from source. |
-| `COPY requirements.txt` BEFORE `COPY *.py` | Docker layer caching. If you edit `app.py` but not requirements, the slow `pip install` layer is reused — rebuilds drop from ~60 s to <5 s. |
+| `COPY requirements.txt` BEFORE the source | Docker layer caching. If you edit `app.py` but not requirements, the slow `pip install` layer is reused — rebuilds drop from ~60 s to <5 s. |
 | `--no-cache-dir` on pip | Saves ~150 MB in the final image (the pip download cache isn't needed at runtime). |
+| `COPY artifacts/ ./artifacts/` | The app calls `joblib.load('artifacts/xgboost_model.pkl')` at startup. Without this line, the container starts then crashes immediately. |
+| Python-stdlib healthcheck (not curl) | The `python:slim` base image doesn't include curl. A curl-based healthcheck would always fail silently. `python -c "import urllib.request..."` is always available. |
 | `--server.address=0.0.0.0` | Streamlit defaults to `127.0.0.1` (localhost), which is unreachable from outside the container. `0.0.0.0` binds all interfaces so `docker run -p 8501:8501` works. |
+| `--server.headless=true` + `--browser.gatherUsageStats=false` | Suppresses the "open a browser?" prompt at startup and disables anonymous telemetry. Both are nice-to-haves for container deployments. |
 
 ### `.dockerignore`
 
@@ -300,9 +307,6 @@ __pycache__/
 .idea/
 .vscode/
 *.md
-batch_score.py
-run_live.sh
-_launch_on_ec2.sh
 ```
 
 **Why each entry:**
@@ -310,8 +314,6 @@ _launch_on_ec2.sh
 - `__pycache__/` / `*.pyc` — bytecode caches, regenerated on first import.
 - `.git/` — your local Git history. Useless inside the image, often hundreds of MB.
 - `*.md` — documentation files. Helpful on disk, unnecessary in the image.
-- `batch_score.py` — not part of the dashboard service.
-- `run_live.sh` / `_launch_on_ec2.sh` — shell launchers meant for the host, not the container.
 
 ---
 
@@ -338,7 +340,8 @@ The `-t` flag tags the resulting image with `truck-delay-app:v1`. The trailing `
  => [2/5] WORKDIR /app                                                     0.3s
  => [3/5] COPY requirements.txt .                                          0.1s
  => [4/5] RUN pip install --no-cache-dir -r requirements.txt              65.2s    ← slowest step
- => [5/5] COPY app.py config.py utils.py ./                                0.6s
+ => [5/6] COPY app.py ./                                                   0.1s
+ => [6/6] COPY artifacts/ ./artifacts/                                     0.5s
  => exporting to image                                                    37.6s
  => => exporting layers                                                   37.6s
  => => writing image sha256:80e6...                                        0.0s
@@ -368,14 +371,15 @@ The "size" varies by Docker version — what matters is the IMAGE ID exists.
 Test the image locally before pushing to ECR — quickest feedback loop.
 
 ```bash
-docker run -d -p 8501:8501 -e DEMO_MODE=true --name td truck-delay-app:v1
+docker run -d -p 8501:8501 --name td truck-delay-app:v1
 ```
 
 What the flags mean:
 - `-d` — detached (runs in the background; returns the container ID)
 - `-p 8501:8501` — map host port 8501 → container port 8501
-- `-e DEMO_MODE=true` — environment variable; the dashboard uses this to skip AWS connections and render synthetic data
 - `--name td` — short name for the container so you can manage it without typing the ID
+
+(No env vars needed — the app reads everything from `./artifacts/` baked into the image.)
 
 ### Wait for Streamlit to bind the port (cold start ~10-15 seconds)
 
@@ -411,10 +415,10 @@ If you see `200 OK`, Streamlit is ready. **Now** open the browser:
 
 **http://localhost:8501**
 
-You should see the FreshBasket Truck Delay Prediction Dashboard:
-- 3 tabs (📅 By Date, 🚛 By Truck ID, 🛤️ By Route ID)
-- Sidebar showing **"DEMO MODE — synthetic data + heuristic predictor"**
-- Clicking "Fetch predictions" on any tab returns a colour-coded results table
+You should see the FreshBasket Delivery Delay Predictor:
+- A form with three columns: 🛣️ Trip & Route Info, 🚛 Driver & Truck Info, 🌤️ Weather Conditions
+- A blue **"Predict Delay Risk"** button at the bottom
+- Click it with any sample inputs — you'll get a coloured result panel (✅ On Time or ⚠️ At Risk Of Delay) with a probability percentage
 
 > **`ERR_CONNECTION_REFUSED` in the browser?** You opened it before Streamlit finished cold-starting (or the container has already been stopped). Re-run the curl health check first; once it returns 200, hard-refresh the browser with **Ctrl+F5** (or **Cmd+Shift+R** on Mac) since Chrome briefly caches connection refusals.
 
@@ -628,7 +632,7 @@ Pull time is similar to push time (depends on **download** bandwidth this time).
 ### Step 11.3 — Run from the pulled image
 
 ```bash
-docker run -d -p 8501:8501 -e DEMO_MODE=true --name td $ECR_URI:v1
+docker run -d -p 8501:8501 --name td $ECR_URI:v1
 
 sleep 15
 curl -sI http://localhost:8501/_stcore/health
@@ -709,7 +713,7 @@ docker builder prune --all --force
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Build fails at `pip install`: "could not find a version that satisfies the requirement..." | Wrong Python in base image, or pinned versions incompatible | Confirm the Dockerfile uses `FROM python:3.12-slim` and that `requirements.txt` matches the M3 Lab E version |
+| Build fails at `pip install`: "could not find a version that satisfies the requirement..." | Wrong Python in base image, or pinned versions incompatible | Confirm the Dockerfile uses `FROM python:3.12-slim` and that `requirements.txt` is the one in `app/` (streamlit 1.32, xgboost 2.0.3, numpy<2.0) |
 | Build fails: "no space left on device" | Docker disk quota full | `docker system prune -a -f` reclaims unused images + layers; Docker Desktop also has a "Resources → Disk image size" slider |
 | Build is very slow (~10+ minutes for pip install) | Slow upstream PyPI mirror | Add `--index-url https://pypi.org/simple/` explicitly to the `pip install` line, or use Docker BuildKit with a network-cached registry |
 | `COPY failed: file not found in build context: app.py` | The 4 source files aren't in the same folder as the Dockerfile | Re-run Section 5 to stage them correctly |
@@ -739,16 +743,12 @@ docker builder prune --all --force
 For when you've done this before and just want the muscle memory:
 
 ```bash
-# Stage
-M3=Module\ 3/labs/M3_Lab_E_Streamlit_Deployment
-BUILD=Module\ 4/build/truck-delay-docker
-mkdir -p $BUILD && cp $M3/{app.py,config.py,utils.py,requirements.txt} $BUILD/
-# (write Dockerfile + .dockerignore -- see Section 6)
+# The build context is already in this repo
+cd labs/M4_Lab4_Docker_Compose/app
 
 # Build + smoke test
-cd $BUILD
 docker build -t truck-delay-app:v1 .
-docker run -d -p 8501:8501 -e DEMO_MODE=true --name td truck-delay-app:v1
+docker run -d -p 8501:8501 --name td truck-delay-app:v1
 sleep 15 && curl -sI http://localhost:8501/_stcore/health
 # Visit http://localhost:8501 to eyeball; then:
 docker stop td && docker rm td
@@ -766,7 +766,7 @@ docker push $ECR_URI:v1
 # Sanity check
 docker rmi truck-delay-app:v1 $ECR_URI:v1
 docker pull $ECR_URI:v1
-docker run -d -p 8501:8501 -e DEMO_MODE=true --name td2 $ECR_URI:v1
+docker run -d -p 8501:8501 --name td2 $ECR_URI:v1
 sleep 15 && curl -sI http://localhost:8501/_stcore/health
 ```
 

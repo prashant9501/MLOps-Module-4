@@ -28,23 +28,23 @@ By the end of this lab you will be able to:
 
 ## Business Context
 
-In Module 3 Lab A, Arjun from the FreshBasket team spent over 20 minutes setting up the Real Estate API on a fresh EC2 instance -- installing Python, transferring files, pip-installing dependencies, and fixing version conflicts. Every new server required the same tedious process. In Lab 1, you wrote a Dockerfile that captures the entire setup as a repeatable recipe. Now you will execute that recipe: build an image once, then start the Streamlit dashboard with a single command in under 5 seconds.
+In Module 3, the FreshBasket team spent over 20 minutes setting up the Streamlit dashboard on a fresh EC2 instance -- installing Python, transferring files, pip-installing dependencies, fighting version conflicts, copying model `.pkl` files. Every new server required the same tedious process. In Lab 1, you reviewed a Dockerfile that captures the entire setup -- including the pre-trained model artifacts -- as a repeatable recipe. Now you will execute that recipe: build an image once, then start the Streamlit dashboard with a single command in under 5 seconds.
 
 ---
 
 ## Step 1: Build the Docker Image
 
-Open a terminal, navigate to your `truck-delay-docker/` directory (the one containing the Dockerfile from Lab 1), and run:
+Open a terminal, navigate into the build context, and run:
 
 > **🪟 Windows (PowerShell or Command Prompt):**
 > ```
-> cd C:\path\to\truck-delay-docker
+> cd labs\M4_Lab4_Docker_Compose\app
 > docker build -t truck-delay-app:v1 .
 > ```
 >
 > **🍎 macOS / 🐧 Linux:**
 > ```bash
-> cd ~/path/to/truck-delay-docker
+> cd labs/M4_Lab4_Docker_Compose/app
 > docker build -t truck-delay-app:v1 .
 > ```
 
@@ -60,13 +60,13 @@ Open a terminal, navigate to your `truck-delay-docker/` directory (the one conta
 Docker processes each instruction in the Dockerfile as a numbered step. You will see output similar to:
 
 ```
-[+] Building 87.3s (12/12) FINISHED
+[+] Building 87.3s (10/10) FINISHED
  => [1/6] FROM python:3.12-slim@sha256:...                          12.4s
  => [2/6] WORKDIR /app                                               0.1s
  => [3/6] COPY requirements.txt .                                    0.0s
  => [4/6] RUN pip install --no-cache-dir -r requirements.txt        62.8s
- => [5/6] RUN apt-get update && apt-get install -y ...               8.2s
- => [6/6] COPY app.py config.py utils.py ./                          0.0s
+ => [5/6] COPY app.py ./                                             0.1s
+ => [6/6] COPY artifacts/ ./artifacts/                               0.5s
  => exporting to image                                                3.7s
 ```
 
@@ -75,9 +75,9 @@ The first build takes 1-3 minutes, depending on your internet speed and machine.
 `[SCREENSHOT: Terminal showing complete docker build output with all steps succeeded]`
 
 > **Build failed?** Check these common issues:
-> - "no such file or directory" for `requirements.txt` -- make sure you are running the command from the directory that contains the Dockerfile.
+> - "no such file or directory" for `requirements.txt` -- make sure you are running the command from `labs/M4_Lab4_Docker_Compose/app/`.
 > - "Cannot connect to the Docker daemon" -- Docker Desktop is not running. Start it and try again.
-> - Pip install errors for specific packages -- your `requirements.txt` may reference a version not available for the container's Python. Double-check that `requirements.txt` matches the one from Module 3 Lab E.
+> - Pip install errors for specific packages -- check that `requirements.txt` is unchanged (streamlit 1.32, xgboost 2.0.3, numpy<2.0).
 
 ---
 
@@ -115,8 +115,8 @@ IMAGE          CREATED         CREATED BY                                      S
 a3b7c9d2e4f6   1 minute ago   CMD ["streamlit" "run" "app.py" ...]            0B
 <missing>      1 minute ago   HEALTHCHECK ...                                 0B
 <missing>      1 minute ago   EXPOSE 8501                                     0B
-<missing>      1 minute ago   COPY app.py config.py utils.py ./               18.4kB
-<missing>      1 minute ago   RUN apt-get update && apt-get install ...        12.3MB
+<missing>      1 minute ago   COPY artifacts/ ./artifacts/                    1.1MB
+<missing>      1 minute ago   COPY app.py ./                                  8.0kB
 <missing>      2 minutes ago  RUN pip install --no-cache-dir -r ...            824MB
 <missing>      2 minutes ago  COPY requirements.txt .                          312B
 <missing>      2 minutes ago  WORKDIR /app                                     0B
@@ -173,9 +173,9 @@ Open your browser and navigate to:
 http://localhost:8501
 ```
 
-The FreshBasket Truck Delay Prediction Dashboard should load. Since you are running locally without AWS credentials, the app will automatically switch to **demo mode** -- it generates synthetic truck data and displays predictions based on a heuristic model. You will see the full dashboard with charts, filters, and prediction results, all powered by the demo data generator in `utils.py`.
+The FreshBasket Delivery Delay Predictor should load -- a form with three columns (🛣️ Trip & Route Info, 🚛 Driver & Truck Info, 🌤️ Weather Conditions) and a blue "Predict Delay Risk" button at the bottom. Fill in sample values, click the button, and you'll get a colour-coded result panel (✅ On Time or ⚠️ At Risk Of Delay) with a probability percentage.
 
-`[SCREENSHOT: Streamlit Truck Delay Dashboard running in the browser from the Docker container, showing the demo mode banner and prediction charts]`
+`[SCREENSHOT: Streamlit Delay Predictor running in the browser from the Docker container, showing the input form and a sample prediction result]`
 
 > **Page not loading?** Give the container 5-10 seconds to start up. Streamlit needs a moment to initialise. If it still does not load after 15 seconds, check the container logs (Step 6).
 
@@ -195,8 +195,6 @@ You will see Streamlit's startup messages:
   You can now view your Streamlit app in your browser.
 
   URL: http://0.0.0.0:8501
-
-  [INFO] Demo mode active — using synthetic data
 ```
 
 To watch logs in real-time (useful for debugging):
@@ -233,7 +231,11 @@ pwd
 
 # List the application files
 ls -la
-# Expected: app.py  config.py  requirements.txt  utils.py
+# Expected: app.py  artifacts  requirements.txt
+
+# Look inside artifacts/
+ls artifacts/
+# Expected: encoder.pkl  model_metadata.json  scaler.pkl  xgboost_model.pkl
 
 # Verify the Python version
 python --version
@@ -241,10 +243,7 @@ python --version
 
 # List installed packages (first 20)
 pip list | head -20
-# Expected: streamlit, pandas, scikit-learn, xgboost, etc.
-
-# Check that batch_score.py is NOT here (excluded by design)
-ls batch_score.py 2>/dev/null || echo "Not found (correct!)"
+# Expected: streamlit, pandas, scikit-learn, xgboost, joblib, etc.
 
 # Exit the container shell
 exit
@@ -256,55 +255,45 @@ exit
 
 ---
 
-## Step 8: Pass Environment Variables
+## Step 8: Pass Environment Variables (Concept)
 
-The `config.py` file reads configuration from environment variables (DB_HOST, DB_PORT, DEMO_MODE, etc.). In a real deployment, you would pass your actual AWS credentials and RDS endpoints to the container. Here is how:
+Our simple app doesn't read any environment variables — everything it needs (model, encoder, scaler, metadata) is baked into the image at `/app/artifacts/`. But **most production containers do** read env vars at startup for things like database hosts, API keys, log levels. Worth knowing the syntax.
 
-First, stop and remove the existing container:
+The pattern is `-e KEY=VALUE` (one flag per variable). Stop and recreate the container with one harmless env var:
 
 ```bash
 docker stop truck-app && docker rm truck-app
-```
 
-Then start a new container with environment variables:
-
-```bash
 docker run -d -p 8501:8501 --name truck-app \
-  -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com \
-  -e DB_PORT=5432 \
-  -e DB_NAME=truck_delay_db \
-  -e DB_USER=mlops_admin \
-  -e DB_PASSWORD=your_password_here \
-  -e S3_BUCKET=mlops-truck-delay-demo-2026 \
-  -e DEMO_MODE=true \
+  -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+  -e LOG_LEVEL=INFO \
   truck-delay-app:v1
 ```
 
 > **🪟 Windows Command Prompt:** Replace the `\` line continuations with `^`:
 > ```
 > docker run -d -p 8501:8501 --name truck-app ^
->   -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com ^
->   -e DB_PORT=5432 ^
->   -e DEMO_MODE=true ^
+>   -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false ^
+>   -e LOG_LEVEL=INFO ^
 >   truck-delay-app:v1
 > ```
 >
 > **🪟 Windows PowerShell:** Use backtick `` ` `` for line continuation:
 > ```powershell
 > docker run -d -p 8501:8501 --name truck-app `
->   -e DB_HOST=your-rds-endpoint.ap-south-1.rds.amazonaws.com `
->   -e DB_PORT=5432 `
->   -e DEMO_MODE=true `
+>   -e STREAMLIT_BROWSER_GATHER_USAGE_STATS=false `
+>   -e LOG_LEVEL=INFO `
 >   truck-delay-app:v1
 > ```
 
-Each `-e KEY=VALUE` flag sets an environment variable inside the container. The app's `config.py` picks these up via `os.getenv()`. For now, keep `DEMO_MODE=true` so the app works without live AWS resources.
-
-You can verify the environment variables are set correctly:
+Verify the variables made it inside the container:
 
 ```bash
-docker exec truck-app env | grep -E "DB_HOST|DEMO_MODE"
+docker exec truck-app env | grep -E "STREAMLIT|LOG_LEVEL"
+# Expected: STREAMLIT_BROWSER_GATHER_USAGE_STATS=false  and  LOG_LEVEL=INFO
 ```
+
+In M5, the ECS task definition uses this same `-e` pattern to inject DB endpoints, AWS credentials, and feature flags into the running container.
 
 ---
 
@@ -387,7 +376,7 @@ Before moving to Lab 3, verify:
 
 - [ ] `docker images truck-delay-app` shows your `v1` image.
 - [ ] `docker run -d -p 8501:8501 --name truck-app truck-delay-app:v1` starts the container.
-- [ ] `http://localhost:8501` shows the FreshBasket Truck Delay Dashboard in your browser.
+- [ ] `http://localhost:8501` shows the FreshBasket Delivery Delay Predictor form in your browser, and submitting it returns a prediction.
 - [ ] `docker exec -it truck-app bash` lets you inspect the container's filesystem.
 - [ ] You can stop, start, and remove the container using the commands from Step 9.
 

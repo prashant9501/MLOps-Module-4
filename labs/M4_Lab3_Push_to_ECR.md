@@ -287,7 +287,7 @@ If you have an EC2 instance from Module 3 (or launch a new one):
 
     ```bash
     docker pull <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/truck-delay-app:v1
-    docker run -d -p 8501:8501 -e DEMO_MODE=true --name truck-app <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/truck-delay-app:v1
+    docker run -d -p 8501:8501 --name truck-app <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/truck-delay-app:v1
     ```
 
 6. **Open in browser:** Navigate to `http://<EC2_PUBLIC_IP>:8501`

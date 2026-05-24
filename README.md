@@ -15,7 +15,7 @@ By the end you'll have:
 - **Docker Desktop / Engine running** on your laptop (Windows + WSL2 / macOS / Linux)
 - **A working Docker image** of the FreshBasket Delay Predictor — `truck-delay-app:v1` (~600 MB)
 - **The same image in your AWS ECR** under a private repository
-- **A `docker-compose.yml`** for the simpler self-contained app — generated via an AI prompt rather than hand-written
+- **A `Dockerfile` + `docker-compose.yml`** — both generated via AI prompts rather than hand-written
 
 This is **spine phase 2**: the Truck Delay app went from notebook (M3) → **containerised (M4)** → production-deployed (M5) → drift-monitored (M6) → feature-store-driven (M7) → fully automated (M8).
 
@@ -39,11 +39,11 @@ This is **spine phase 2**: the Truck Delay app went from notebook (M3) → **con
     └── M4_Lab4_Docker_Compose/                          The Compose lab
         ├── README.md                                       Compose lab walkthrough
         ├── docker-compose.yml                              Single-service Compose example
-        └── app/
-            ├── app.py                                      Self-contained Streamlit predictor
-            ├── Dockerfile                                  Image recipe (layer-cached, healthcheck included)
+        └── app/                                            The application -- used by ALL labs
+            ├── app.py                                      Self-contained Streamlit predictor (loads .pkl from disk)
+            ├── Dockerfile                                  Image recipe (layer-cached, Python-stdlib healthcheck)
             ├── requirements.txt                            Pinned Python deps
-            └── artifacts/                                  Pre-trained .pkl files + 11 reference plots
+            └── artifacts/                                  4 files: 3 .pkl + model_metadata.json (~1 MB total)
 ```
 
 ---
@@ -66,15 +66,20 @@ Skip straight to **[labs/M4_KT_Docker_Compose_with_AI.md](labs/M4_KT_Docker_Comp
 
 ## Prerequisites
 
-You need three things from **outside** this repo:
+Everything you need is **already in this repo** under `labs/M4_Lab4_Docker_Compose/app/`:
 
-1. **The M3 Streamlit app files** — `app.py`, `config.py`, `utils.py`, `requirements.txt`. Clone https://github.com/prashant9501/MLOps-Module-3 and pull them from `labs/M3_Lab_E_Streamlit_Deployment/`. **You don't need to have run M3** — the app supports `DEMO_MODE=true` with synthetic data, so M4 Labs 1-2-4 work without any AWS deployment from M3.
+- `app.py` — the FreshBasket Delivery Delay Predictor (Streamlit, ~200 lines)
+- `requirements.txt` — pinned Python dependencies
+- `artifacts/` — 4 pre-trained files the app loads at startup (xgboost_model.pkl, encoder.pkl, scaler.pkl, model_metadata.json)
 
-   > Lab 4 (the Compose lab) uses a **simpler self-contained app** that's already in this repo at `labs/M4_Lab4_Docker_Compose/app/` — no M3 dependency for that one.
+This app is **self-contained** — it loads everything from local disk, no AWS / RDS / MLflow / S3 needed. The labs use it as the example throughout.
 
-2. **An AWS account** with permissions for ECR + IAM (only needed for Lab 3 push to ECR).
+You only need two things from **outside** this repo:
 
-3. **A laptop with Docker Desktop or Docker Engine.** Install instructions for all 3 OSes are in §3 of the Student Guide.
+1. **An AWS account** with permissions for ECR + IAM (only needed for Lab 3 push to ECR).
+2. **A laptop with Docker Desktop or Docker Engine.** Install instructions for all 3 OSes are in §3 of the Student Guide.
+
+> **You don't need to have run M3.** The model artifacts in `app/artifacts/` were exported from M3 once and are version-controlled with the repo — clone and they're yours.
 
 ---
 

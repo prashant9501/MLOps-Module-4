@@ -1,4 +1,4 @@
-# M4 Lab 1: Write a Dockerfile for the Truck Delay App
+# M4 Lab 1: Write a Dockerfile for the Delay Predictor
 
 **Module 4 -- Containerization with Docker | Spine Project: Truck Delay Classification**
 
@@ -9,7 +9,7 @@
 | Duration | 45 minutes |
 | Difficulty | Beginner |
 | Tools | Docker Desktop (Windows/Mac) or Docker Engine (Linux), VS Code |
-| Prerequisite | The four Streamlit-app files from Module 3 Lab E available on disk (you don't need to have *run* M3; just clone the M3 repo) |
+| Prerequisite | This repo cloned. The application source already lives at `labs/M4_Lab4_Docker_Compose/app/` — no copying from other repos needed. |
 | Builds Toward | Lab 2 (build and run), Lab 3 (push to ECR) |
 
 ---
@@ -18,16 +18,17 @@
 
 By the end of this lab you will be able to:
 
-1. Explain the purpose of each core Dockerfile instruction (FROM, WORKDIR, COPY, RUN, EXPOSE, CMD).
+1. Explain the purpose of each core Dockerfile instruction (FROM, WORKDIR, COPY, RUN, EXPOSE, HEALTHCHECK, CMD).
 2. Choose an appropriate Python base image for an ML application.
 3. Order Dockerfile layers to maximise build-cache efficiency.
 4. Create a `.dockerignore` file to keep the build context small.
+5. Pick a healthcheck strategy that works with the base image you chose.
 
 ---
 
 ## Business Context
 
-Priya's FreshBasket logistics team in Pune is happy with the Streamlit dashboard from Module 3 -- it shows truck delay predictions across their fleet. But deployment was painful: every time a new team member or server needed the app, someone spent 20+ minutes installing Python, pip-installing libraries, configuring environment variables, and debugging version mismatches. Arjun asked during the last standup: *"Can we just package this thing once and run it anywhere?"* That is exactly what Docker does. In this lab you will write the recipe (a Dockerfile) that describes how to package the Streamlit app into a container image.
+Priya's FreshBasket logistics team in Pune wants to ship the Delivery Delay Predictor to as many environments as possible — Arjun's laptop, the staging EC2, eventually ECS Fargate in M5. Right now every fresh install eats 20+ minutes: install Python, pip-install ML libraries, copy the model `.pkl` files, fight version mismatches. Arjun asked during the standup: *"Can we just package this thing once and run it anywhere?"* That is exactly what Docker does. In this lab you write the recipe (a Dockerfile) that describes how to package the Streamlit app **and its pre-trained model files** into one self-contained container image.
 
 ---
 
@@ -51,44 +52,64 @@ You should see output like `Docker version 27.x.x, build ...`. If you get "comma
 
 `[SCREENSHOT: Terminal showing docker --version output]`
 
-### Module 3 Lab E Files
+### The Application Files
 
-You need the five files from the Module 3 Lab E Streamlit project. **You don't need to have run M3** — just clone the [Module 3 repo](https://github.com/prashant9501/MLOps-Module-3) and copy the files from `labs/M3_Lab_E_Streamlit_Deployment/` into a new working directory for this lab:
+The build context is **already prepared** in this repo at `labs/M4_Lab4_Docker_Compose/app/`. Open that folder in VS Code:
 
 ```
-truck-delay-docker/
-    app.py                  # Streamlit dashboard entry point
-    config.py               # Centralised configuration (DB, S3, features)
-    utils.py                # Helper functions (model loading, demo data)
-    batch_score.py          # Batch scoring script (NOT containerised)
-    requirements.txt        # Python dependencies
+labs/M4_Lab4_Docker_Compose/app/
+├── app.py              Streamlit dashboard entry point (~200 lines)
+├── requirements.txt    Pinned Python dependencies (streamlit, pandas, xgboost, scikit-learn, ...)
+├── Dockerfile          The file you'll learn to read + write in this lab
+└── artifacts/          4 files (~1 MB) the app loads at startup
+    ├── xgboost_model.pkl
+    ├── encoder.pkl
+    ├── scaler.pkl
+    └── model_metadata.json
 ```
 
-> **Missing files?** Clone the [Module 3 repo](https://github.com/prashant9501/MLOps-Module-3) and copy them from `labs/M3_Lab_E_Streamlit_Deployment/`. You don't need to have completed Module 3 — every step in *this* lab uses the files in `DEMO_MODE=true`, so the dashboard runs without any AWS resources.
+> **Why is there already a Dockerfile?** So you have a reference solution to compare against once you've written your own version. The walkthrough below recreates it from scratch — at the end you can diff your output against the committed one.
 
 ---
 
-## Step 1: Review the Application You Are Containerising
+## Step 1: Understand What You're Containerising
 
-Before writing any Docker instructions, understand what you are packaging. Open each file in VS Code and remind yourself what it does:
+Before writing any Docker instructions, understand what's going inside. Open `app.py` in VS Code and skim it:
 
-| File | Purpose | Runs Inside Container? |
+```python
+import streamlit as st
+import pandas as pd
+import joblib
+import json
+
+# Load 4 pre-trained artifacts from disk
+model    = joblib.load('artifacts/xgboost_model.pkl')
+encoder  = joblib.load('artifacts/encoder.pkl')
+scaler   = joblib.load('artifacts/scaler.pkl')
+metadata = json.load(open('artifacts/model_metadata.json'))
+
+# Streamlit form → predict → display
+...
+```
+
+The application is **deliberately self-contained**:
+
+| File | Purpose | Goes inside the container? |
 |---|---|---|
-| `app.py` | Streamlit dashboard -- the main entry point users interact with | Yes |
-| `config.py` | Reads environment variables for DB host, S3 bucket, feature lists, demo mode flag | Yes |
-| `utils.py` | Model loading from S3, database queries, synthetic demo data generation | Yes |
-| `requirements.txt` | Lists all Python packages (streamlit, pandas, scikit-learn, xgboost, etc.) | Yes (installed at build time) |
-| `batch_score.py` | Standalone batch scoring script run on a schedule -- NOT part of the dashboard | No |
+| `app.py` | Streamlit form + prediction logic | **Yes** |
+| `requirements.txt` | Pinned Python packages the app needs | **Yes** (installed at build time) |
+| `artifacts/xgboost_model.pkl` | The trained XGBoost classifier | **Yes** (loaded at startup) |
+| `artifacts/encoder.pkl` | OneHotEncoder fitted on training categoricals | **Yes** |
+| `artifacts/scaler.pkl` | StandardScaler fitted on training continuous features | **Yes** |
+| `artifacts/model_metadata.json` | Feature names + column groupings the app uses to assemble the input matrix | **Yes** |
 
-**Key insight:** `batch_score.py` is a separate operational script that runs independently (e.g., via a cron job or Airflow). It does not belong inside the dashboard container. We will leave it out.
-
-The application has a **demo mode** built into `config.py`. When the environment variable `DEMO_MODE` is set to `true`, or when AWS services (RDS, S3) are unreachable, the app generates synthetic data and runs without any cloud dependencies. This means your container will work immediately on your laptop even without AWS credentials -- perfect for local development and testing.
+**Key insight:** because the artifacts are bundled into the image, the container is **standalone** — no calls out to S3, RDS, or MLflow at startup. Drop this image on any machine with Docker installed and it serves predictions. That's the whole point of a container.
 
 ---
 
 ## Step 2: Choose a Base Image
 
-Every Dockerfile starts with a `FROM` instruction that specifies the base image -- the starting point for your container. For a Python application, the official `python` images on Docker Hub are the standard choice.
+Every Dockerfile starts with a `FROM` instruction that specifies the base image — the starting point for your container. For a Python application, the official `python` images on Docker Hub are the standard choice.
 
 There are three common variants. Here is how they compare:
 
@@ -108,145 +129,142 @@ The slim variant is the sweet spot for ML applications. It is small enough to pu
 
 ## Step 3: Write the Dockerfile
 
-Create a new file called `Dockerfile` (no file extension) in your `truck-delay-docker/` directory. Open it in VS Code and add the following content:
+From a terminal:
+
+```bash
+cd labs/M4_Lab4_Docker_Compose/app
+```
+
+Open the existing `Dockerfile` in VS Code. It looks like this:
 
 ```dockerfile
-# ── FreshBasket Truck Delay Dashboard ──────────────────────────────
-# Module 4, Lab 1 — Containerised Streamlit Application
+# FreshBasket Delay Predictor -- Streamlit Dashboard Image
+# Loads pre-trained .pkl artifacts directly from ./artifacts/. No DB / S3 / MLflow.
 #
-# Build:  docker build -t truck-delay-app:v1 .
-# Run:    docker run -d -p 8501:8501 truck-delay-app:v1
+# Build:   docker build -t freshbasket-dashboard .
+# Run:     docker run -p 8501:8501 freshbasket-dashboard
 
 FROM python:3.12-slim
 
-# ── 1. Set the working directory inside the container ──────────────
 WORKDIR /app
 
-# ── 2. Copy requirements FIRST (layer-caching optimisation) ───────
+# Install dependencies first (layer caching: edits to app.py / artifacts don't bust this layer)
 COPY requirements.txt .
-
-# ── 3. Install Python dependencies ────────────────────────────────
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── 4. Install curl for the health check ──────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+# Copy application code AND artifacts/ (the .pkl files the app loads at startup)
+COPY app.py ./
+COPY artifacts/ ./artifacts/
 
-# ── 5. Copy application source code ──────────────────────────────
-COPY app.py config.py utils.py ./
-
-# ── 6. Expose Streamlit's default port ────────────────────────────
 EXPOSE 8501
 
-# ── 7. Health check (optional but recommended) ───────────────────
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+# Health check uses Python stdlib (python:3.12-slim doesn't ship curl)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3).status == 200 else 1)"
 
-# ── 8. Run the Streamlit application ─────────────────────────────
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
 ```
 
 `[SCREENSHOT: VS Code showing the complete Dockerfile with syntax highlighting]`
 
 ### Instruction-by-Instruction Explanation
 
-Work through the Dockerfile from top to bottom. Each instruction creates a new **layer** in the image.
+Work through the Dockerfile from top to bottom. Each non-comment instruction creates a new **layer** in the image.
 
 **`FROM python:3.12-slim`**
-This tells Docker to start with the official Python 3.12 slim image. Think of it as "start with a clean Linux machine that already has Python installed."
+Start with the official Python 3.12 slim image. Think of it as "start with a clean Linux machine that already has Python installed."
 
 **`WORKDIR /app`**
 Sets the current directory inside the container to `/app`. All subsequent `COPY`, `RUN`, and `CMD` instructions execute relative to this path. If the directory does not exist, Docker creates it automatically.
 
 **`COPY requirements.txt .`**
-Copies the `requirements.txt` file from your local machine (the build context) into the container's `/app` directory. We copy this file alone, before copying source code, for a reason explained in Step 5.
+Copies the `requirements.txt` file from your local machine (the build context) into the container's `/app` directory. We copy this file **alone**, before copying source code, for a layer-caching reason explained in the discussion below.
 
 **`RUN pip install --no-cache-dir -r requirements.txt`**
-Runs the pip install command inside the container during the build. The `--no-cache-dir` flag prevents pip from storing download caches, keeping the layer smaller. This is the slowest step (often 60-120 seconds) because it downloads and installs streamlit, pandas, scikit-learn, xgboost, and all their sub-dependencies.
+Runs `pip install` inside the container during the build. The `--no-cache-dir` flag prevents pip from storing download caches in the image, saving ~150 MB. This is the slowest step (typically 60-90 seconds) because it downloads streamlit, pandas, scikit-learn, xgboost, joblib, and all their sub-dependencies.
 
-**`RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf ...`**
-Installs the `curl` command-line tool, which the health check uses. The `rm -rf /var/lib/apt/lists/*` at the end removes the package index files to save space.
+**`COPY app.py ./`**
+Copies the single Python source file into the container's `/app`.
 
-**`COPY app.py config.py utils.py ./`**
-Copies your three application files into the container. Notice that `batch_score.py` is intentionally excluded -- it is not part of the dashboard.
+**`COPY artifacts/ ./artifacts/`**
+Copies the entire `artifacts/` folder (4 files, ~1 MB) into `/app/artifacts/`. Without this line, the container would start but immediately crash on `joblib.load('artifacts/xgboost_model.pkl')` — file not found. The container has its own filesystem, isolated from your laptop's, so the artifacts have to be explicitly copied in.
 
 **`EXPOSE 8501`**
-Documents that the container listens on port 8501. This does not actually open the port -- it is metadata that tells other developers (and tools like docker-compose) which port the app uses.
+Documents that the container listens on port 8501. This does not actually open the port — it is metadata that tells other developers (and tools like docker-compose, Kubernetes, ECS) which port the app uses.
 
-**`HEALTHCHECK ...`**
-Tells Docker how to verify the container is healthy. Every 30 seconds, Docker runs the `curl` command against Streamlit's built-in health endpoint. If three consecutive checks fail, Docker marks the container as "unhealthy". This is valuable in production orchestrators like ECS (Module 5).
+**`HEALTHCHECK --interval=30s ... CMD python -c "..."`**
+Tells Docker how to verify the container is healthy. Every 30 seconds, Docker runs the Python one-liner inside the container. It hits Streamlit's built-in `/_stcore/health` endpoint via `urllib.request`. If three consecutive checks fail, Docker marks the container as "unhealthy" — valuable in orchestrators like ECS (M5).
+
+> **Why Python urllib and not curl?** The `python:3.12-slim` base image does **not** include curl. A `HEALTHCHECK CMD curl ...` would error out with "command not found" on every check, and the container would always be marked unhealthy even when it's actually serving fine. You could `RUN apt-get install -y curl` to add it, but that adds ~10 MB to the image. Using Python's stdlib `urllib.request` instead is zero-cost — Python is already in the image.
 
 **`CMD ["streamlit", "run", "app.py", ...]`**
-The default command that runs when a container starts. The `--server.address=0.0.0.0` flag is critical -- without it, Streamlit only listens on `localhost` inside the container, which means no traffic from outside can reach it.
+The default command that runs when a container starts. Flags worth knowing:
+- `--server.port=8501` — bind to the port we EXPOSE'd
+- `--server.address=0.0.0.0` — **critical**. Without it, Streamlit listens only on `localhost` inside the container, which means no traffic from outside can reach it. `0.0.0.0` means "all network interfaces"
+- `--server.headless=true` — don't try to open a browser window (there isn't one inside a container)
+- `--browser.gatherUsageStats=false` — disable anonymous usage telemetry
 
 ---
 
 ## Step 4: Create a .dockerignore File
 
-When you run `docker build`, Docker sends the entire directory (the "build context") to the Docker daemon. If your project directory contains large files like trained model binaries, CSV datasets, or the `.venv` virtual environment, the build context becomes unnecessarily large and the build slows down.
+When you run `docker build`, Docker sends the entire directory (the "build context") to the Docker daemon. If your project contains large unused files like `.venv/`, `.git/`, or local Jupyter notebooks, the build context becomes unnecessarily large and the build slows down.
 
-Create a file called `.dockerignore` (note the leading dot) in the same directory as your Dockerfile:
+The repo already includes `.dockerignore` at `labs/M4_Lab4_Docker_Compose/.dockerignore`. A typical content:
 
 ```
-# Virtual environment -- never ship this into a container
+# Virtual environments -- never ship these into a container
 .venv/
+venv/
 
 # Python bytecode caches
 __pycache__/
 *.pyc
+*.pyo
 
 # Git metadata
 .git/
 .gitignore
 
-# Data files and model artifacts (loaded from S3 at runtime)
-*.csv
-*.pkl
-*.sav
-data/
-models/
-
-# Environment secrets (should use env vars instead)
-.env
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
 
 # Documentation (not needed inside the container)
 *.md
-
-# Batch scoring script (separate operational concern)
-batch_score.py
-
-# Jupyter notebook checkpoints
-.ipynb_checkpoints/
 ```
 
-**Why this matters:** Without `.dockerignore`, a `.venv` folder alone can add 500+ MB to your build context. With it, Docker only sends the files the Dockerfile actually needs -- in our case, just the Dockerfile itself, `requirements.txt`, and the three `.py` files. Build context drops from potentially hundreds of megabytes to under 100 KB.
+**Why this matters:** Without `.dockerignore`, a `.venv` folder alone can add 500+ MB to your build context (you've already pip-installed everything once locally — those 500 MB are sitting in `.venv/`). With it, Docker only sends the files the Dockerfile actually needs.
+
+For our `app/` folder the difference isn't huge (no `.venv/` here), but the habit matters for projects where the dev workspace IS the build context.
 
 ---
 
 ## Step 5: Verify Your File Structure
 
-Before moving to Lab 2 (where you will build the image), confirm your directory looks exactly like this:
+Before moving to Lab 2 (where you will build the image), confirm your folder looks exactly like this:
 
 ```
-truck-delay-docker/
-    Dockerfile              # The recipe you wrote in Step 3
-    .dockerignore           # Build context exclusions from Step 4
-    app.py                  # Streamlit dashboard (from M3 Lab E)
-    config.py               # Configuration file (from M3 Lab E)
-    utils.py                # Utility functions (from M3 Lab E)
-    batch_score.py          # Batch scorer (excluded from container)
-    requirements.txt        # Python dependencies (from M3 Lab E)
+labs/M4_Lab4_Docker_Compose/app/
+├── Dockerfile              The recipe you walked through in Step 3
+├── app.py                  Streamlit dashboard
+├── requirements.txt        Python dependencies
+└── artifacts/              The 4 files the app loads at startup
+    ├── xgboost_model.pkl
+    ├── encoder.pkl
+    ├── scaler.pkl
+    └── model_metadata.json
 ```
 
-> **🪟 Windows note:** Windows Explorer hides files that start with a dot by default. To see `.dockerignore`, open the folder in VS Code's Explorer panel, or enable "Show hidden files" in Windows Explorer (View > Show > Hidden items).
+> **🪟 Windows note:** Windows Explorer hides files that start with a dot by default. To see `.dockerignore` (it's one level above, in `labs/M4_Lab4_Docker_Compose/`), open the folder in VS Code's Explorer panel, or enable "Show hidden files" in Windows Explorer (View > Show > Hidden items).
 
-`[SCREENSHOT: VS Code Explorer panel showing all files in truck-delay-docker directory]`
+`[SCREENSHOT: VS Code Explorer panel showing the app/ folder with all files visible]`
 
 ---
 
 ## Discussion: Why Layer Ordering Matters
 
-The order of instructions in your Dockerfile is not arbitrary. Docker caches each layer. When you rebuild the image, Docker reuses cached layers from the top until it hits a layer whose inputs have changed -- then it rebuilds that layer and everything below it.
+The order of instructions in your Dockerfile is not arbitrary. Docker caches each layer. When you rebuild the image, Docker reuses cached layers from the top until it hits a layer whose inputs have changed — then it rebuilds that layer and everything below it.
 
 Consider two scenarios:
 
@@ -257,9 +275,9 @@ FROM python:3.12-slim          ✅ cached (unchanged)
 WORKDIR /app                   ✅ cached (unchanged)
 COPY requirements.txt .        ✅ cached (requirements.txt unchanged)
 RUN pip install ...            ✅ cached (same requirements)
-RUN apt-get install curl ...   ✅ cached (same instruction)
-COPY app.py config.py utils.py ❌ REBUILD (app.py changed)
-EXPOSE 8501                    ❌ rebuild (below changed layer)
+COPY app.py ./                 ❌ REBUILD (app.py changed)
+COPY artifacts/ ./artifacts/   ❌ rebuild (below changed layer)
+EXPOSE 8501                    ❌ rebuild
 HEALTHCHECK ...                ❌ rebuild
 CMD ...                        ❌ rebuild
 ```
@@ -273,18 +291,18 @@ FROM python:3.12-slim          ✅ cached
 WORKDIR /app                   ✅ cached
 COPY requirements.txt .        ❌ REBUILD (requirements.txt changed)
 RUN pip install ...            ❌ REBUILD (must re-install)
-RUN apt-get install curl ...   ❌ rebuild
-COPY app.py config.py utils.py ❌ rebuild
+COPY app.py ./                 ❌ rebuild
+COPY artifacts/ ./artifacts/   ❌ rebuild
 EXPOSE 8501                    ❌ rebuild
 HEALTHCHECK ...                ❌ rebuild
 CMD ...                        ❌ rebuild
 ```
 
-**Result:** The pip install runs again. Rebuild takes **60-120 seconds**. But this is rare -- you change dependencies far less often than source code.
+**Result:** The pip install runs again. Rebuild takes **60-120 seconds**. But this is rare — you change dependencies far less often than source code.
 
 ### What if we had copied everything at once?
 
-If the Dockerfile used a single `COPY . .` instead of separating `requirements.txt` from the source files, then every source code change would invalidate the pip install cache. You would wait 60-120 seconds on every single rebuild, even for a one-character typo fix. The two-step copy pattern avoids this.
+If the Dockerfile used a single `COPY . .` instead of separating `requirements.txt` from the source files, then **every** source code change would invalidate the pip install cache. You'd wait 60-120 seconds on every single rebuild, even for a one-character typo fix. The two-step copy pattern avoids this.
 
 ---
 
@@ -292,16 +310,17 @@ If the Dockerfile used a single `COPY . .` instead of separating `requirements.t
 
 Before moving to Lab 2, verify:
 
-- [ ] `Dockerfile` exists in your project directory with all 8 instructions.
-- [ ] `.dockerignore` exists and excludes `.venv/`, data files, and `batch_score.py`.
-- [ ] You can explain why `COPY requirements.txt .` comes before `COPY app.py config.py utils.py ./`.
+- [ ] You can locate the Dockerfile at `labs/M4_Lab4_Docker_Compose/app/Dockerfile`.
+- [ ] You can explain why `COPY requirements.txt .` comes **before** `COPY app.py ./`.
+- [ ] You can explain why the Dockerfile uses Python `urllib.request` (not curl) for the healthcheck.
+- [ ] You can explain what `--server.address=0.0.0.0` does and why it matters.
 - [ ] Docker Desktop (or Docker Engine) is running on your machine.
 
 ---
 
 ## What Comes Next
 
-In **Lab 2** you will build this Dockerfile into an image, run it as a container, test the Streamlit dashboard in your browser, and explore container inspection commands. The Dockerfile you wrote here is the input -- `docker build` is the tool that turns it into a runnable image.
+In **Lab 2** you will build this Dockerfile into an image, run it as a container, test the dashboard in your browser, and explore container inspection commands (`docker logs`, `docker exec`, `docker history`). The Dockerfile you reviewed here is the input — `docker build` is the tool that turns it into a runnable image.
 
 ---
 
