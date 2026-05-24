@@ -2,7 +2,7 @@
 
 > **Just want to ship it end-to-end via CLI?** See [M4_Docker_End_to_End_Student_Guide.md](M4_Docker_End_to_End_Student_Guide.md) — single doc that creates the ECR repo via `aws ecr create-repository` (CLI, no Console). This lab is the Console-clicks alternative for students who want to see every ECR screen hands-on.
 
-> **Who this is for:** every student in Module 4 who prefers learning AWS services via the Console. M4 needs **one** AWS resource — a private ECR repository to receive the Docker image you'll push in Lab 3. This doc walks you through creating it via the AWS Console (click by click), setting a sensible lifecycle policy, and verifying your IAM permissions before Lab 3.
+> **Who this is for:** every student in Module 4 who prefers learning AWS services via the Console. M4 needs **one** AWS resource — a private ECR repository to receive the Docker image you'll push in Lab 4. This doc walks you through creating it via the AWS Console (click by click), setting a sensible lifecycle policy, and verifying your IAM permissions before Lab 4.
 >
 > **Time:** ~15 minutes the first time you do it.
 >
@@ -33,7 +33,7 @@
 
 | # | Service | What it does for M4 |
 |---|---|---|
-| 1 | **ECR private repository** | Cloud-hosted Docker registry. Holds every version (tag) of the Truck Delay dashboard image. Lab 3 pushes here; Module 5 ECS will pull from here. |
+| 1 | **ECR private repository** | Cloud-hosted Docker registry. Holds every version (tag) of the Truck Delay dashboard image. Lab 4 pushes here; Module 5 ECS will pull from here. |
 | 2 | **ECR lifecycle policy** | Automatic image cleanup — keeps only the last 5 images. Without it, every rebuild adds 1.5 GB to your ECR bill forever. |
 | 3 | **IAM permission check** | Confirms your IAM user has `AmazonEC2ContainerRegistryFullAccess` (or equivalent). If you used the admin user from M3, you're already covered. |
 
@@ -102,7 +102,7 @@ Write it down. You'll type it three times.
 | ECR repository | `<REPO_NAME>` | ECR → Repositories list |
 | Repository URI | `<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<REPO_NAME>` | Click the repo name → top of the detail page |
 
-**Copy the Repository URI now.** You'll paste it into the `docker tag` command in Lab 3.
+**Copy the Repository URI now.** You'll paste it into the `docker tag` command in Lab 4.
 
 `[SCREENSHOT: ECR repository detail page showing the URI at the top, with the "Copy URI" button highlighted]`
 
@@ -135,7 +135,7 @@ Without this, every Docker push adds another image to the repo, and ECR storage 
 You can dry-run lifecycle evaluation before any cleanup happens:
 
 1. Left sidebar → **Lifecycle Policy** → **Save and apply rules**.
-2. ECR shows you which images *would* be deleted on the next evaluation. For a brand-new empty repo, the list is empty — that's the right answer. After Lab 3 + a few rebuilds, this becomes useful.
+2. ECR shows you which images *would* be deleted on the next evaluation. For a brand-new empty repo, the list is empty — that's the right answer. After Lab 4 + a few rebuilds, this becomes useful.
 
 > **When ECR actually deletes:** lifecycle policies run on a schedule (~daily), not on every push. So after a push you'll briefly have 6 images; ECR garbage-collects the oldest one within 24 hours.
 
@@ -143,7 +143,7 @@ You can dry-run lifecycle evaluation before any cleanup happens:
 
 ## Step 3: Verify your IAM permissions for ECR
 
-ECR push/pull requires specific IAM permissions. If you used the admin user from M3, you already have them — but verify before Lab 3 so you don't hit a permission error mid-class.
+ECR push/pull requires specific IAM permissions. If you used the admin user from M3, you already have them — but verify before Lab 4 so you don't hit a permission error mid-class.
 
 ### Console clicks
 
@@ -173,7 +173,7 @@ You need **one of these** attached:
 
 ## Step 4: Test docker login (CLI smoke test)
 
-This is a 30-second sanity check that everything is wired up. If it fails, Lab 3 will fail at the same step, so catch it now.
+This is a 30-second sanity check that everything is wired up. If it fails, Lab 4 will fail at the same step, so catch it now.
 
 ### Run it
 
@@ -210,7 +210,7 @@ Login Succeeded
 
 ## 5. End-to-end verification
 
-Three checks. All should pass before you start Lab 3.
+Three checks. All should pass before you start Lab 4.
 
 ### Check 1: Console shows the empty repo
 
@@ -234,7 +234,7 @@ aws ecr get-login-password --region <REGION> \
 
 Expected: `Login Succeeded`.
 
-If all three pass — you're ready for Lab 3. The Lab 3 doc assumes the repo exists and Docker is logged in; it picks up exactly where this lab ends.
+If all three pass — you're ready for Lab 4. The Lab 4 doc assumes the repo exists and Docker is logged in; it picks up exactly where this lab ends.
 
 ---
 
@@ -294,11 +294,11 @@ Nothing. ECR repos don't leave behind any orphan resources. IAM permissions stay
 
 ## What's next
 
-Now run Lab 3 (`M4_Lab4_Push_to_ECR.md`). It assumes:
+Now run Lab 4 ([M4_Lab4_Push_to_ECR.md](M4_Lab4_Push_to_ECR.md)). It assumes:
 
 - An ECR repo named `<REPO_NAME>` exists in `<REGION>` ✅ (Step 1)
 - The lifecycle policy is set ✅ (Step 2)
 - Your IAM user has ECR permissions ✅ (Step 3)
 - Docker is authenticated to ECR ✅ (Step 4)
 
-Lab 3 skips straight to tagging the local image and pushing it. The first push takes ~1–3 minutes depending on your upload bandwidth — most of the time is the 1.5 GB image transfer.
+Lab 4 skips straight to tagging the local image and pushing it. The first push takes ~1–3 minutes depending on your upload bandwidth — most of the time is the 1.5 GB image transfer.

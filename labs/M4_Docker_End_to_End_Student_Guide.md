@@ -1,8 +1,8 @@
 # Module 4 — Docker End-to-End Student Walkthrough
 
-**Containerise the Module 3 Truck Delay dashboard, push it to ECR, and prove the image runs anywhere.**
+**Containerise the FreshBasket Delivery Delay Predictor (the self-contained M4 dashboard), push it to ECR, and prove the image runs anywhere.**
 
-> Goal of this doc: a single walkthrough you can follow on your own machine — from installing Docker to having your image in AWS ECR + verified portable. The individual M4 labs ([Lab A](M4_Lab_A_AWS_Provisioning_from_Console.md), [Lab 1](M4_Lab1_Write_Dockerfile.md), [Lab 2](M4_Lab2_Build_Run_Test.md), [Lab 3](M4_Lab4_Push_to_ECR.md)) go deeper on each step; this doc is the "happy-path" tie-everything-together version.
+> Goal of this doc: a single walkthrough you can follow on your own machine — from installing Docker to having your image in AWS ECR + verified portable. The individual M4 labs ([Lab A](M4_Lab_A_AWS_Provisioning_from_Console.md), [Lab 1](M4_Lab1_Write_Dockerfile.md), [Lab 2](M4_Lab2_Build_Run_Test.md), [Lab 3 — Docker Compose](M4_Lab3_Docker_Compose/README.md), [Lab 4 — Push to ECR](M4_Lab4_Push_to_ECR.md)) go deeper on each step; this doc is the "happy-path" tie-everything-together version.
 
 > Format: every OS-specific step is marked **🪟 Windows / 🍎 macOS / 🐧 Linux**. Run the variant that matches your machine and skip the others.
 
@@ -319,7 +319,7 @@ __pycache__/
 
 ## 7. Build the image
 
-From inside the `Module 4/build/truck-delay-docker/` folder:
+From inside the `labs/M4_Lab3_Docker_Compose/app/` folder (the build context you `cd`'d into at the end of Section 5):
 
 ```bash
 docker build -t truck-delay-app:v1 .

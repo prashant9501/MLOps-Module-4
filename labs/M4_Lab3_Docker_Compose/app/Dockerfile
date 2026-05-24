@@ -1,4 +1,4 @@
-# FreshBasket Delay Predictor -- Streamlit Dashboard Image (Lab 4 Compose variant)
+# FreshBasket Delay Predictor -- Streamlit Dashboard Image (M4 Lab 3 Compose variant)
 # Loads pre-trained .pkl artifacts directly from ./artifacts/. No DB / S3 / MLflow.
 #
 # Build:   docker build -t freshbasket-dashboard .

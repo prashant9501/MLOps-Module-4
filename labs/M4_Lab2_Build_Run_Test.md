@@ -390,7 +390,7 @@ Before moving to Lab 3, verify:
 
 ## Clean Up
 
-For Lab 3 you will need the `truck-delay-app:v1` image, so do NOT delete it. But remove any stopped containers to keep things tidy:
+For Lab 4 (push to ECR) you will need the `truck-delay-app:v1` image, so do NOT delete it. Lab 3 (Docker Compose) is independent — Compose builds its own image — so it doesn't depend on this one either way. Remove any stopped containers to keep things tidy:
 
 ```bash
 docker rm -f truck-app 2>/dev/null
@@ -400,7 +400,9 @@ docker rm -f truck-app 2>/dev/null
 
 ## What Comes Next
 
-In **Lab 3** you will push your Docker image to Amazon Elastic Container Registry (ECR) -- AWS's private image repository. Once the image is in ECR, any EC2 instance (or ECS cluster in Module 5) can pull and run it without needing your source code or Dockerfile.
+In **Lab 3** you will wrap this image in a `docker-compose.yml` for one-command local startup, and learn how to delegate Compose-file authoring to an AI model.
+
+In **Lab 4** you will push your Docker image to Amazon Elastic Container Registry (ECR) — AWS's private image repository. Once the image is in ECR, any EC2 instance (or ECS cluster in Module 5) can pull and run it without needing your source code or Dockerfile.
 
 ---
 
