@@ -1,207 +1,200 @@
-# M4 KT — Generating a `docker-compose.yml` Using an AI Model
+# M4 KT — Generating Dockerfile + `docker-compose.yml` Using an AI Model
 
-**Module 4 | Knowledge Transfer | The "delegate the YAML to an AI" pattern**
+**Module 4 | Knowledge Transfer | "Hand the Docker work to an AI" pattern**
 
-> **Audience:** anyone who has the Module 3 simple Streamlit predictor (or a similar single-app project) and wants Docker Compose for it — but doesn't want to memorise Compose v2 syntax.
+> **Audience:** anyone with a Python app (a `.py` file + a `requirements.txt`) who wants it containerised + composed — without memorising Dockerfile syntax or Compose v2 spec.
 >
-> **Length of this doc:** ~10 minutes to read. ~3-5 minutes to actually do once you understand the flow.
+> **End state:** working `Dockerfile`, working `docker-compose.yml`, a running container serving the app on `http://localhost:<port>`. ~10 minutes once you've done it once.
 >
-> **AI model:** any modern one will do — Claude (Sonnet / Opus), ChatGPT (4o / 5), Gemini 2.5 Pro, etc. Examples below use a generic "AI" — the prompts work across all of them.
+> **AI model:** any modern one — Claude (Sonnet / Opus), ChatGPT (4o / 5), Gemini 2.5 Pro, etc. The prompts work across all of them.
 
 ---
 
 ## Why this KT exists
 
-Writing a Docker Compose file by hand has three problems:
+Three friction points when containerising a project by hand:
 
-1. **YAML is unforgiving** — one wrong indent and the whole file is invalid. Easy to lose 20 minutes to "I forgot to indent `volumes:`".
-2. **The spec evolves** — Compose v1 (`docker-compose`, hyphenated) vs v2 (`docker compose`, space). The two have different syntax for the same concepts (`version:` field, healthchecks, depends_on conditions). Old StackOverflow answers often use v1; current Docker Desktop uses v2.
-3. **The 80% case is templated** — most apps need the same blocks (build, ports, env, volumes, healthcheck, restart). Hand-writing them from scratch every time is wasted effort.
+1. **Dockerfile syntax is a moving target.** Layer caching tricks (`COPY requirements.txt` before source code), the right base image (`python:3.12-slim` vs `alpine` vs full `python:3.12`), healthchecks, non-root users, multi-stage builds — easy to forget one and produce a 2 GB image that takes 5 minutes to rebuild.
+2. **YAML is unforgiving.** One bad indent in `docker-compose.yml` and the whole file is invalid.
+3. **The 80% case is templated.** Most Python web apps need the same blocks. Hand-writing them every time is wasted effort.
 
-An AI model handles all three. You describe what you have + what you want, the AI returns a working YAML, you validate + run.
+An AI handles all three. You describe your app, the AI returns a working Dockerfile + Compose file, you validate + run.
 
 This KT teaches you **how to prompt well** so the output is correct on the first try.
 
 ---
 
-## The 5-step workflow
+## The 6-step workflow
 
 ```
-1. Inventory  →  list the files the AI needs to "see"
-2. Context    →  paste those files into the chat
-3. Prompt     →  paste the prompt template, fill in the blanks
-4. Validate   →  inspect the output before running it
-5. Run        →  docker compose up -d --build
+1. Inventory   →  list the files the AI needs to "see"
+2. Context     →  paste those files into the chat
+3. Stage 1     →  ask the AI to generate the Dockerfile
+4. Stage 2     →  ask the AI to generate the docker-compose.yml
+5. Validate    →  eyeball both outputs against the checklist
+6. Build + run →  docker compose up -d --build; visit the URL
 ```
 
-We'll work the simple Streamlit predictor as the example.
+We'll work the M4 Lab 4 self-contained Streamlit predictor as the example. The same flow works for Flask APIs, FastAPI services, batch scripts, Jupyter notebooks served via voila, etc.
 
 ---
 
 ## Step 1 — Inventory: what files does the AI need?
 
-The AI needs enough context to know:
-- **What** runs inside the container (the app code + its deps)
-- **How** it starts (the Dockerfile, if one exists; otherwise, the entry-point command)
-- **What** it needs at runtime (env vars, files, ports, dependent services)
+For the **Dockerfile** stage, the AI needs to know:
+- **What the app does** — to pick the right base image, the right CMD, the right port
+- **What it depends on** — to know what to install
 
-For our simple app, that's three files:
+So for our simple Streamlit app, share these two files:
 
-| File | Why the AI needs it |
+| File | Why |
 |---|---|
-| `app/app.py` | To understand what the app does + what it loads. The AI reads it once, sees `joblib.load('artifacts/...')` + `streamlit run`, and infers: "needs Python + xgboost + the artifacts folder + port 8501". |
-| `app/requirements.txt` | The pinned Python deps. The AI bakes these into the Dockerfile / base image choice. Also helps it pick the right `FROM python:3.12-slim` (vs `python:3.8`, etc.). |
-| `app/Dockerfile` | If you already have one, paste it so the AI knows the build context shape (does it copy `artifacts/`? expose port 8501? have a healthcheck?). If you don't have one yet, ask the AI to generate it too. |
+| `app.py` | The AI reads `import streamlit`, sees `joblib.load('artifacts/...')`, and infers: "Python app, Streamlit framework, needs the artifacts/ folder at runtime, default port 8501." |
+| `requirements.txt` | Pinned Python deps. The AI picks the Python version compatible with those packages (e.g., `streamlit==1.32` works on Python 3.10-3.12 → it picks 3.12-slim). |
 
-**That's it.** Don't dump the entire repo — irrelevant files dilute the context and increase the chance the AI hallucinates something. Three files is the sweet spot for a single-service Compose.
+**Optionally** share:
+- A short text description of any **runtime data** the app needs at startup. Our app reads `artifacts/*.pkl`, so we mention "the app loads .pkl files from an `artifacts/` directory alongside `app.py`" — that tells the AI to add a `COPY artifacts/ ./artifacts/` line.
+- Any **non-default port** the app binds to. Streamlit defaults to 8501 so we don't need this. Flask defaults to 5000, FastAPI to 8000. Mention it if different.
 
-If you're doing a multi-service Compose (see Section 6), add:
-- A short description of each service ("Postgres 15 for storing prediction logs, MLflow 2.10 backed by Postgres")
-- The model metadata file if the AI needs to understand the schema (`artifacts/model_metadata.json`)
+Don't share the whole repo — irrelevant files dilute the context and increase hallucination risk. Two files + one sentence of context is the sweet spot.
 
 ---
 
 ## Step 2 — Set up the context block
 
-Paste this at the top of your chat with the AI, **before** the prompt. The wording matters — being explicit about what's pasted helps the AI not invent things.
+Paste this at the top of the AI chat. Wording matters — being explicit about what you're sharing helps the AI not invent things.
 
 ```
-I have a single-service Streamlit application I want to wrap in Docker Compose.
+I'm containerising a Python application. I need both a Dockerfile AND a
+docker-compose.yml for it, in that order. I'll ask for them in two separate
+prompts so I can review each.
 
-Below are the three relevant files. Read them carefully before you respond.
+Below are the two relevant files. Read them carefully before you respond.
+
+The app also reads pre-trained .pkl files from an `artifacts/` folder
+that sits alongside app.py. The container needs to include that folder.
 
 ==========================
-FILE 1: app/app.py
+FILE 1: app.py
 ==========================
 <paste the full contents of app.py here>
 
 ==========================
-FILE 2: app/requirements.txt
+FILE 2: requirements.txt
 ==========================
 <paste requirements.txt here>
-
-==========================
-FILE 3: app/Dockerfile
-==========================
-<paste the Dockerfile here>
 ```
 
-> **Why paste them inline?** Because pasting files directly is the most reliable way to give an AI context. File attachments and URL references work too, but inline pasting works on every AI (no upload feature needed) and produces deterministic results.
+> **Tip:** paste files inline rather than uploading attachments. Inline pasting works on every AI model (no upload feature needed), produces deterministic results, and is easy to debug if the output is wrong.
 
 ---
 
-## Step 3 — The prompt
+## Step 3 — Stage 1: Ask the AI to generate the Dockerfile
 
-Paste this after your context block. Adjust the bracketed fields for your project.
+Paste this **after** your context block:
 
 ```
-Goal: generate a `docker-compose.yml` for the app above.
+STAGE 1 OF 2 -- Generate the Dockerfile.
 
 Requirements:
-- Use Docker Compose v2 syntax (no `version:` field at the top — that's deprecated).
-- Single service named "dashboard".
-- Build the image from ./app (uses the Dockerfile pasted above).
-- Map host port 8501 to container port 8501.
-- Include a healthcheck that hits Streamlit's /_stcore/health endpoint using
-  Python's urllib (not curl — the base image doesn't ship curl).
-- Set the restart policy to `unless-stopped`.
+- Base image: python:3.12-slim (good balance of size + ML-package compatibility)
+- WORKDIR /app
+- Order matters for layer caching: COPY requirements.txt and pip install
+  it BEFORE copying any source code, so source edits don't bust the pip cache
+- COPY app.py AND the artifacts/ folder (the app reads .pkl files from
+  artifacts/ at startup, so the folder must be inside the image)
+- EXPOSE the port the app listens on
+- HEALTHCHECK that uses Python stdlib urllib (the slim base image
+  does NOT ship curl, so don't write a curl-based healthcheck)
+- CMD that starts the app with --server.address=0.0.0.0 so it binds
+  all interfaces (otherwise `docker run -p` won't route traffic in)
+- Add a 1-line comment above each instruction explaining what it does
+
+Output: ONLY the Dockerfile, in a fenced code block. No prose.
+```
+
+A good AI returns something like:
+
+```dockerfile
+# Use the slim Python 3.12 image -- ~75 MB base, fully compatible with ML packages
+FROM python:3.12-slim
+
+# All subsequent commands run inside /app, matches where we'll COPY the source
+WORKDIR /app
+
+# Copy requirements FIRST so the heavy pip-install layer caches across source edits
+COPY requirements.txt .
+
+# --no-cache-dir saves ~150 MB vs the default behavior
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code and the pre-trained artifacts the app loads at startup
+COPY app.py ./
+COPY artifacts/ ./artifacts/
+
+# Streamlit's default port
+EXPOSE 8501
+
+# Health check using Python stdlib (slim base image doesn't ship curl)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3).status == 200 else 1)"
+
+# Bind to 0.0.0.0 so docker -p can map the port in from the host
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
+```
+
+Save this to your project folder as `Dockerfile` (no extension). Compare against the one already in `labs/M4_Lab4_Docker_Compose/app/Dockerfile` — should be close to identical.
+
+---
+
+## Step 4 — Stage 2: Ask the AI to generate the docker-compose.yml
+
+In the **same chat** (don't start a new conversation — the AI already has your app's context loaded), paste:
+
+```
+STAGE 2 OF 2 -- Generate the docker-compose.yml using the Dockerfile from Stage 1.
+
+Requirements:
+- Use Docker Compose v2 syntax (NO `version:` field at the top -- that's
+  deprecated)
+- Single service named "dashboard"
+- Build the image from ./app (the folder containing the Dockerfile + app.py
+  + requirements.txt + artifacts/)
+- Map host port 8501 to container port 8501
+- Include the SAME healthcheck as the Dockerfile (Python urllib hitting
+  /_stcore/health -- expressed in Compose array form)
+- Restart policy: unless-stopped
 - Add inline comments explaining what each block does, written for someone
-  who has never used Compose before.
+  who has never used Compose before
+- After the YAML, add a 3-line "How to run" block:
+    docker compose up -d --build
+    docker compose ps
+    docker compose down
 
-Constraints:
-- Output ONLY the YAML, in a fenced code block.
-- No prose explanation alongside the YAML — I want to copy-paste cleanly.
-- After the YAML, add a 3-line "How to run" block (`docker compose up -d --build`,
-  `docker compose ps`, `docker compose down`).
+Output: YAML in a fenced code block, then the 3-line how-to-run. No
+prose between or around.
 ```
 
-Send this. A good AI returns valid YAML in 5-10 seconds.
-
----
-
-## Step 4 — Validate the output
-
-Before running anything, eyeball the YAML for these red flags:
-
-| Check | What to look for | If wrong... |
-|---|---|---|
-| **No `version:` field at the top** | Compose v2 ignores it; older AI training data may still include it. | Delete the `version: '3.x'` line if present. Harmless but obsolete. |
-| **`build.context` matches your folder** | Should be `./app`, not `.` or `./dashboard`. | Edit to match where your Dockerfile actually lives. |
-| **Port mapping is `HOST:CONTAINER`** | `"8501:8501"` is right. AI sometimes flips this. | Swap if reversed. |
-| **Healthcheck `test:` uses an array form** | `["CMD", "python", "-c", "..."]` or `["CMD-SHELL", "..."]`. NOT a bare string. | Reformat as array. |
-| **Healthcheck command doesn't use curl** | Should use Python urllib (curl isn't in `python:*-slim` base images). | Reject + reprompt: "Don't use curl; use Python urllib." |
-| **No invented services** | The AI may add a `db:` or `redis:` service unprompted. | If you didn't ask for it, delete it. |
-| **No invented volumes** | Same — only include volumes if your app actually needs persistence. | Remove unprompted `volumes:` blocks. |
-
-If the YAML passes these checks, save it as `docker-compose.yml` in the parent folder of your `app/` directory.
-
-**Sanity-validate the YAML syntax**:
-
-```bash
-docker compose config
-# Prints the parsed config if valid; errors out with line numbers if not.
-```
-
-If `docker compose config` errors, copy the error back to the AI and ask it to fix.
-
----
-
-## Step 5 — Run it
-
-From the folder containing `docker-compose.yml`:
-
-```bash
-docker compose up -d --build
-docker compose ps
-# Expected: dashboard service shown as "running" then "running (healthy)" after ~20 s
-
-# Visit http://localhost:8501 in a browser
-# Fill in the form, click "Predict Delay Risk"
-
-docker compose down       # Tear down when done
-```
-
-If `ps` shows status `(unhealthy)` after a couple of minutes:
-
-```bash
-docker compose logs dashboard
-```
-
-Find the Python traceback. Most common at this stage: the Dockerfile didn't `COPY artifacts/` into the image, so `app.py` errors out at startup. Fix the Dockerfile and rerun `docker compose up -d --build`.
-
----
-
-## A complete worked example
-
-For the M4 Lab 4 single-service Compose, here's what the AI returned with the prompt above (your output may vary slightly):
+Expected output:
 
 ```yaml
 services:
   dashboard:
-    # Build the image from the Dockerfile in ./app
-    # (Compose passes ./app as the build context, so paths like 'artifacts/'
-    # in the Dockerfile resolve relative to that folder.)
+    # Build the image from ./app (Dockerfile + app.py + artifacts/ live there)
     build:
       context: ./app
       dockerfile: Dockerfile
     container_name: freshbasket-dashboard
 
-    # Map host port 8501 -> container port 8501 (Streamlit's default)
+    # Map HOST:CONTAINER. 8501 is Streamlit's default port.
     ports:
       - "8501:8501"
 
-    # The simple app doesn't read any env vars; the line below just disables
-    # Streamlit's anonymous usage telemetry (a nice-to-have).
-    environment:
-      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-
-    # If the container crashes, Compose restarts it. Stays off only when you
-    # explicitly run `docker compose down`.
+    # If the container crashes, Compose restarts it. Stops respecting this
+    # only when you explicitly run `docker compose down`.
     restart: unless-stopped
 
-    # Hit Streamlit's built-in health endpoint to confirm the app is ready.
-    # We use Python's urllib because the python:3.12-slim base image doesn't
-    # include curl.
+    # Hit Streamlit's built-in health endpoint via Python stdlib (no curl in
+    # python:slim base images). Array form is required by Compose v2.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=3).status == 200 else 1)"]
       interval: 30s
@@ -217,85 +210,183 @@ docker compose ps
 docker compose down
 ```
 
-That's exactly what's in `docker-compose.yml` in this folder.
+Save this to your project folder as `docker-compose.yml` (one level above `./app`).
+
+> **Folder structure at this point:**
+> ```
+> your-project/
+> ├── docker-compose.yml           ← Stage 2 output
+> └── app/
+>     ├── Dockerfile               ← Stage 1 output
+>     ├── app.py
+>     ├── requirements.txt
+>     └── artifacts/               ← .pkl files
+> ```
 
 ---
 
-## 6. Stretch: ask the AI for a multi-service variant
+## Step 5 — Validate both outputs before running
 
-Once you've got the single-service Compose working, here's how to extend it. **Add this to the chat** (don't start a new conversation — the AI already has the app's context loaded from Steps 2-3):
+Eyeball the Dockerfile and the Compose file for these red flags:
+
+### Dockerfile checklist
+
+| Check | What to look for | If wrong... |
+|---|---|---|
+| `FROM` uses `python:3.x-slim` | Should match Python version your deps need. Avoid `alpine` for ML packages (compilation hell for numpy/scikit-learn). | Reprompt: "Use python:3.12-slim, not alpine." |
+| `COPY requirements.txt` BEFORE `COPY app.py` | This is the layer-caching trick. If reversed, every source edit forces a re-pip-install. | Edit + retry. |
+| `--no-cache-dir` on `pip install` | Saves ~150 MB in the final image. | Add it. |
+| `COPY artifacts/` is present | App needs `.pkl` files at runtime. Without this, the container starts then crashes. | Reprompt: "Add a COPY for the artifacts folder." |
+| `EXPOSE 8501` (or the app's actual port) | EXPOSE is documentation; the actual mapping happens in Compose. Still good to have. | Add. |
+| Healthcheck uses Python stdlib (NOT curl) | `python:slim` images don't ship curl. Curl-based healthcheck fails silently. | Reprompt: "Don't use curl; use Python urllib." |
+| `CMD` includes `--server.address=0.0.0.0` (for Streamlit / Flask binding) | Without this, the app binds 127.0.0.1, unreachable from outside the container. | Add. |
+
+### docker-compose.yml checklist
+
+| Check | What to look for | If wrong... |
+|---|---|---|
+| **No `version:` field at the top** | Compose v2 ignores it; older AI training data may still include it. | Delete the `version: '3.x'` line. |
+| `build.context: ./app` matches your folder layout | The AI sometimes guesses `.` or `./src`. | Edit to match where your Dockerfile lives. |
+| `ports:` is `HOST:CONTAINER` | `"8501:8501"` is fine. AI sometimes flips this. | Swap if reversed. |
+| `healthcheck.test:` uses **array form** | `["CMD", "python", "-c", "..."]` or `["CMD-SHELL", "..."]`. NOT a bare string. | Reformat as array. |
+| Healthcheck command doesn't use curl | Should mirror the Dockerfile (Python urllib). | Reject + reprompt. |
+| No invented services | AI sometimes adds `db:` or `redis:` unprompted. | Delete if you didn't ask. |
+| No invented volumes / bind mounts | Same — only include volumes if your app needs persistence. | Remove unprompted blocks. |
+
+Then validate Compose syntax:
+
+```bash
+docker compose config
+# Prints the parsed config if valid; errors out with line numbers if not.
+```
+
+If `docker compose config` errors, copy the error message back to the AI: "This Compose file errored with `<paste error>`. Fix it."
+
+---
+
+## Step 6 — Build + run
+
+From the folder containing `docker-compose.yml`:
+
+```bash
+docker compose up -d --build      # Build the image + start the container
+docker compose ps                  # Should show 'running (healthy)' after ~20 s
+docker compose logs -f dashboard   # Follow logs (Ctrl-C to stop following)
+
+# Visit the URL in your browser
+open http://localhost:8501          # macOS
+# Or just paste http://localhost:8501 in any browser
+
+docker compose down                # Tear down when done
+```
+
+If `docker compose ps` shows `(unhealthy)` for more than 2 minutes:
+
+```bash
+docker compose logs dashboard
+# Look for the Python traceback. Most common at this stage:
+#   - artifacts/ not in the image (Dockerfile missing COPY)
+#   - port mismatch (Dockerfile EXPOSEs one port, app binds another)
+#   - Python version too old for some pip package
+```
+
+Fix the Dockerfile, run `docker compose up -d --build` again.
+
+---
+
+## 7. Stretch — multi-service (Postgres + MLflow)
+
+Once you've got the single-service version working, extend it. **Add this to the same chat** (the AI still has your app's context):
 
 ```
-Now extend the docker-compose.yml above with two more services:
+STRETCH -- extend the docker-compose.yml above with two more services:
 
-1. A PostgreSQL 15 database named "db":
-   - Use image postgres:15-alpine
-   - Database: predictions_db
+1. PostgreSQL 15 named "db":
+   - Image: postgres:15-alpine
+   - DB: predictions_db
    - User: app_user
-   - Password: read from env var DB_PASSWORD (default to "changeme_in_prod" if unset)
+   - Password: read from env var DB_PASSWORD (default "changeme_in_prod")
    - Persist data with a named volume "pgdata"
-   - Add a healthcheck using pg_isready
+   - Healthcheck using pg_isready
 
-2. An MLflow tracking server named "mlflow":
-   - Use python:3.12-slim as the base image
-   - Install mlflow + psycopg2-binary on container startup (via `command:`)
-   - Run `mlflow server --host 0.0.0.0 --port 5000` with the PostgreSQL
-     above as the backend store URI
-   - Depend on `db` being healthy before starting
+2. MLflow tracking server named "mlflow":
+   - Base: python:3.12-slim
+   - Install mlflow + psycopg2-binary on startup (via `command:`)
+   - Run `mlflow server --host 0.0.0.0 --port 5000` with the Postgres
+     above as backend store URI
+   - Wait for `db` to be healthy before starting (depends_on with condition)
 
-3. Update the dashboard service:
-   - Wait for db to be healthy before starting (depends_on with condition: service_healthy)
+3. Update dashboard service:
+   - depends_on db with condition: service_healthy
    - Pass DB_HOST=db, DB_PORT=5432, MLFLOW_TRACKING_URI=http://mlflow:5000
-     into the dashboard's environment (the app may not read these yet, but
-     plumbing them is useful for the next iteration)
+     into the dashboard's environment
 
-4. Put all three services on a custom bridge network named "freshbasket-net"
-   so they resolve each other by service name.
+4. All three services on a custom bridge network "freshbasket-net" so they
+   resolve each other by service name.
 
-Output rules: same as before -- YAML only, no prose, plus the run/stop commands at the end.
+Output rules: same as before -- YAML only, no prose, plus run/stop commands at the end.
 ```
 
-The AI will return a 3-service Compose. Apply the same validation checks from Step 4 (note: now you'll have `volumes:` and `networks:` top-level blocks, which is expected for multi-service setups).
+Apply the same validation checks. Now you'll have top-level `volumes:` and `networks:` blocks, which is expected for multi-service setups.
 
 ---
 
-## Common AI mistakes to watch for
+## Common AI mistakes — what to spot
+
+### Dockerfile mistakes
 
 | Mistake | Why it happens | How to spot it |
 |---|---|---|
-| Adds `version: '3.x'` at the top | Stale training data — pre-2023 Compose docs included `version:` | First line of the YAML |
-| Uses curl in healthcheck | Curl is on every AI's "obvious" list; doesn't notice slim base image doesn't have it | Look at `test:` array |
-| Uses `links:` instead of `networks:` | `links:` was deprecated in Compose v2 | Look for top-level `links:` block — should be `networks:` |
-| Bind-mounts `./app` into the container | Useful for live-reload dev but defeats the "image is portable" lesson | `volumes:` block under the service mounting source code |
-| Names services in CamelCase | Service names should be lowercase + hyphens / underscores | Look at `services:` block — should be all lowercase |
-| Forgets `depends_on.condition` for v2 | v2 needs explicit `condition: service_healthy`; just `depends_on: [db]` doesn't wait for healthy | Multi-service stacks only |
+| Uses `python:3.x` (full, ~1 GB) instead of `python:3.x-slim` | AI defaults to "safe" full image | Image size > 1 GB after build |
+| Uses `python:3.x-alpine` for ML workloads | Alpine is "small" so AI suggests it; ML wheels rarely work on Alpine | Build fails compiling numpy/sklearn from source |
+| Forgets `--no-cache-dir` on pip | Not in the AI's "must-have" list | `du -sh /root/.cache/pip` inside container shows ~150 MB |
+| `COPY . .` instead of explicit `COPY app.py artifacts/ ./` | Less precise — copies in test files, .git/, .venv/ if not gitignored | Image suddenly much larger than expected |
+| Curl-based healthcheck on slim image | Curl is on every AI's "obvious" list; doesn't notice slim doesn't have it | Healthcheck always returns "starting" then "unhealthy" |
+| Missing `--server.address=0.0.0.0` (Streamlit) or `--host 0.0.0.0` (FastAPI) | AI uses framework defaults | Browser can't connect even though container is running |
 
-If you spot any of these, reprompt with a one-liner: "Remove the `version:` field" or "Use Python urllib in the healthcheck, not curl". The AI fixes and re-emits.
+### docker-compose.yml mistakes
+
+| Mistake | Why it happens | How to spot it |
+|---|---|---|
+| Adds `version: '3.x'` at the top | Stale training data — pre-2023 Compose docs included it | First line of the YAML |
+| `healthcheck.test` as a bare string instead of array | Older Compose syntax allowed bare strings | `docker compose config` may show warnings |
+| Uses `links:` instead of `networks:` | `links:` was deprecated in Compose v2 | Top-level `links:` block |
+| Bind-mounts `./app` into the container | Useful for live-reload dev but defeats the "image is portable" point | `volumes:` block under the service mounting source code |
+| Service names in CamelCase | Should be lowercase + hyphens / underscores | `services:` block |
+| Forgets `depends_on.condition: service_healthy` | Without it, depends_on only waits for the dependency to START, not be healthy | Multi-service stacks only — dashboard starts before db is ready |
+
+If you spot any, reprompt with a one-liner like "Remove the `version:` field" or "Use Python urllib in the healthcheck, not curl". The AI fixes and re-emits.
 
 ---
 
-## When NOT to use AI for Compose
+## When NOT to use AI for Docker
 
 The AI is great for **structure**. It's not great for:
 
-- **Picking image versions for production** — the AI may suggest `postgres:latest` (no version pin) or pin to a version that's been EOL'd. Always check official Docker Hub for current stable tags.
-- **Tuning resource limits** — `mem_limit`, `cpus`, etc. depend on your actual workload. AI defaults are wild guesses.
-- **Security hardening** — non-root users, read-only filesystems, `cap_drop`. AI knows these exist but rarely applies them by default. For production, treat AI output as a starting draft.
+- **Picking image version pins for production** — the AI may suggest `postgres:latest` (no version pin) or pin to a version that's been EOL'd. Always check Docker Hub for current stable tags.
+- **Tuning resource limits** — `mem_limit`, `cpus`, etc. depend on your actual workload. AI defaults are guesses.
+- **Security hardening** — non-root users, read-only filesystems, `cap_drop`, secret management. AI knows these exist but rarely applies them. For production, treat AI output as a starting draft.
+- **Multi-stage builds for compiled languages (Go, Rust)** — AI can do these but often gets the layer copy wrong. Worth hand-reviewing.
 
-For a class lab? AI-generated Compose is more than fine. For a production prod-ops deploy, hand-review every line.
+For a class lab or a dev environment? AI-generated is more than fine. For a production deploy, hand-review every line.
 
 ---
 
-## Quick-reference prompt (copy-paste-ready)
+## Quick-reference combined prompt
 
-For when you've done this before and just want the magic words:
+Once you're comfortable with both stages, you can ask for both files in one prompt. Useful for repeat use:
 
 ```
-Generate a docker-compose.yml (v2 syntax, no version field) for the app I'm
-about to paste. Use the Dockerfile in ./app for the build context. Map port
-8501. Python urllib healthcheck on /_stcore/health (no curl). Restart
-unless-stopped. Output YAML only, inside a fenced code block. Add inline
-comments. After the YAML, add the docker compose up/ps/down commands.
+Containerise this Python app. Generate:
+1. A Dockerfile (FROM python:3.12-slim, WORKDIR /app, requirements before
+   source, --no-cache-dir, COPY app.py + artifacts/, EXPOSE 8501, Python-
+   stdlib healthcheck on /_stcore/health, CMD streamlit run app.py
+   --server.address=0.0.0.0).
+2. A docker-compose.yml (v2 syntax, no version field, build from ./app,
+   port 8501, restart unless-stopped, healthcheck mirroring Dockerfile,
+   inline comments).
+
+After both, add the docker compose up/ps/down commands.
 
 ==========================
 app.py:
@@ -303,9 +394,19 @@ app.py:
 
 requirements.txt:
 <paste>
-
-Dockerfile:
-<paste>
 ```
 
-That's the whole KT in one prompt.
+That's the whole KT in one prompt for when you've internalised the pattern.
+
+---
+
+## Recap
+
+The deliverable of this KT is **two files** you didn't hand-write:
+
+1. `Dockerfile` — generated in Stage 1 from `app.py + requirements.txt + a sentence about runtime files`
+2. `docker-compose.yml` — generated in Stage 2 using the Dockerfile from Stage 1 as additional context
+
+Both checked against the Dockerfile + Compose validation tables above before running. End state: `docker compose up -d --build` brings the app up at `http://localhost:8501`.
+
+This is the workflow you'll use on real projects — most teams don't hand-write Docker tooling anymore; they generate from a description and pattern-match from prior examples.
