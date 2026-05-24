@@ -11,6 +11,9 @@
 # Students should regenerate this themselves following M4_Docker_End_to_End_Student_Guide.md.
 build/
 
+# ----- Branch project (kept local, not in the public student repo) -----
+labs/M4_Branch_SBERT_Search/
+
 # ----- Office lock files -----
 ~$*
 *.tmp

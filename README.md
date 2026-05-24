@@ -16,7 +16,6 @@ By the end you'll have:
 - **A working Docker image** of the FreshBasket Delay Predictor — `truck-delay-app:v1` (~600 MB)
 - **The same image in your AWS ECR** under a private repository
 - **A `docker-compose.yml`** for the simpler self-contained app — generated via an AI prompt rather than hand-written
-- **Conceptual exposure** to a separate Flask + SBERT containerised search service via the branch take-home
 
 This is **spine phase 2**: the Truck Delay app went from notebook (M3) → **containerised (M4)** → production-deployed (M5) → drift-monitored (M6) → feature-store-driven (M7) → fully automated (M8).
 
@@ -37,19 +36,14 @@ This is **spine phase 2**: the Truck Delay app went from notebook (M3) → **con
     ├── M4_Lab2_Build_Run_Test.md                        Deep dive on docker build / run / logs / exec / lifecycle
     ├── M4_Lab3_Push_to_ECR.md                           Deep dive on docker login / tag / push to ECR
     │
-    ├── M4_Lab4_Docker_Compose/                          The Compose lab
-    │   ├── README.md                                       Compose lab walkthrough
-    │   ├── docker-compose.yml                              Single-service Compose example
-    │   └── app/
-    │       ├── app.py                                      Self-contained Streamlit predictor
-    │       ├── Dockerfile                                  Image recipe (layer-cached, healthcheck included)
-    │       ├── requirements.txt                            Pinned Python deps
-    │       └── artifacts/                                  Pre-trained .pkl files + 11 reference plots
-    │
-    └── M4_Branch_SBERT_Search/                          Take-home branch project (NLP / Flask + SBERT)
-        ├── M4_Branch_Briefing_SBERT.md
-        ├── solution/                                        Full reference implementation
-        └── starter/                                         Scaffolding for students to fill in
+    └── M4_Lab4_Docker_Compose/                          The Compose lab
+        ├── README.md                                       Compose lab walkthrough
+        ├── docker-compose.yml                              Single-service Compose example
+        └── app/
+            ├── app.py                                      Self-contained Streamlit predictor
+            ├── Dockerfile                                  Image recipe (layer-cached, healthcheck included)
+            ├── requirements.txt                            Pinned Python deps
+            └── artifacts/                                  Pre-trained .pkl files + 11 reference plots
 ```
 
 ---
